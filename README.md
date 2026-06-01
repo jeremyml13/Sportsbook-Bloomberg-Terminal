@@ -33,6 +33,30 @@ python -m app.cli seed-mock
 
 The app falls back to in-memory mock data if Postgres is not running. Once the database is migrated and seeded, the API reads the 5-game NBA board, snapshots, history, and signals from Postgres.
 
+To fetch today's MLB odds from SportsDataIO into Postgres:
+
+```bash
+cd backend
+source .venv/bin/activate
+python -m app.cli ingest-mlb-odds
+```
+
+To fetch today's MLB odds from The Odds API into Postgres:
+
+```bash
+cd backend
+source .venv/bin/activate
+python -m app.cli ingest-odds-api-mlb
+```
+
+To fetch MLB player injuries and news from SportsDataIO into Postgres:
+
+```bash
+cd backend
+source .venv/bin/activate
+python -m app.cli ingest-mlb-context
+```
+
 ### Frontend
 
 ```bash
@@ -49,6 +73,9 @@ The app will be available at the Vite URL shown in your terminal.
 - `GET /games/{game_id}`
 - `GET /games/{game_id}/odds-history`
 - `GET /games/{game_id}/signals`
+- `GET /context/mlb/injuries`
+- `GET /context/mlb/news`
 - `POST /ingest/odds`
+- `POST /ingest/sportsdataio/mlb-context`
 
 All routes currently use mock data or route stubs. Real Odds API integration is intentionally deferred.
