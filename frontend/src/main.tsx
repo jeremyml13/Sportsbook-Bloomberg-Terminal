@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import ReactDOM from "react-dom/client";
-import { Activity, AlertTriangle, ArrowLeft, Clock, Newspaper, Radio, RefreshCw, Search, Star, Trash2, TrendingUp } from "lucide-react";
+import { Activity, AlertTriangle, ArrowLeft, Bot, Clock, Newspaper, Radio, RefreshCw, Search, Send, Star, Trash2, TrendingUp } from "lucide-react";
 import {
   CartesianGrid,
   Line,
@@ -172,7 +172,8 @@ type PlayerInjuryEvent = {
 };
 
 type ChartMode = "home_spread" | "moneyline" | "total";
-type ViewMode = "board" | "opportunities" | "watchlist" | "notebook" | "tracking" | "screener";
+type ViewMode = "board" | "opportunities" | "watchlist" | "notebook" | "tracking" | "screener" | "copilot";
+type SportKey = "basketball_nba" | "baseball_mlb" | "americanfootball_nfl";
 type ScreenerFilter = "stale" | "disagreement" | "soon" | "watchlist" | "saved" | "quiet";
 
 type SavedBetIdea = {
@@ -206,6 +207,17 @@ type IngestOddsResponse = {
   message: string;
 };
 
+type ChatMessage = {
+  role: "user" | "assistant";
+  content: string;
+};
+
+type ChatResponse = {
+  answer: string;
+  model: string;
+  context_games: number;
+};
+
 const CHART_MODES: { key: ChartMode; label: string; description: string }[] = [
   { key: "home_spread", label: "Home Spread", description: "Home team line by sportsbook" },
   { key: "moneyline", label: "Moneyline", description: "Home team moneyline by sportsbook" },
@@ -216,6 +228,11 @@ const API_BASE = "http://127.0.0.1:8000";
 const BOOK_COLORS = ["#22c55e", "#38bdf8", "#f59e0b", "#a78bfa", "#f472b6", "#14b8a6", "#eab308", "#fb7185", "#818cf8"];
 const WATCHLIST_STORAGE_KEY = "sports-terminal-watchlist";
 const BET_IDEAS_STORAGE_KEY = "sports-terminal-bet-ideas";
+const SPORTS: { key: SportKey; label: string; title: string }[] = [
+  { key: "basketball_nba", label: "NBA", title: "NBA Games" },
+  { key: "baseball_mlb", label: "MLB", title: "MLB Games" },
+  { key: "americanfootball_nfl", label: "NFL", title: "NFL Games" },
+];
 
 function formatOdds(value: number) {
   return value > 0 ? `+${value}` : String(value);
@@ -251,6 +268,10 @@ function formatAge(seconds: number | null) {
   const hours = Math.floor(minutes / 60);
   if (hours < 48) return `${hours}h ${minutes % 60}m ago`;
   return `${Math.floor(hours / 24)}d ago`;
+}
+
+function sportMeta(sportKey: SportKey) {
+  return SPORTS.find((sport) => sport.key === sportKey) ?? SPORTS[0];
 }
 
 function firstLine(markets: OddsLine[], sportsbook = "DraftKings") {
@@ -810,6 +831,221 @@ function Stat({ icon, label, value }: { icon: React.ReactNode; label: string; va
   );
 }
 
+function InlineMarkdown({ text }: { text: string }) {
+  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+  return (
+    <>
+      {parts.map((part, index) =>
+        part.startsWith("**") && part.endsWith("**") ? (
+          <strong key={`${part}-${index}`} className="font-semibold text-slate-50">
+            {part.slice(2, -2)}
+          </strong>
+        ) : (
+          <React.Fragment key={`${part}-${index}`}>{part}</React.Fragment>
+        ),
+      )}
+    </>
+  );
+}
+
+function MarkdownContent({ content }: { content: string }) {
+  const lines = content.split(/\r?\n/);
+  const blocks: React.ReactNode[] = [];
+  let index = 0;
+
+  while (index < lines.length) {
+    const line = lines[index].trim();
+    if (!line) {
+      index += 1;
+      continue;
+    }
+
+    if (line.includes("|") && lines[index + 1]?.includes("|") && lines[index + 1]?.includes("---")) {
+      const tableLines: string[] = [];
+      while (index < lines.length && lines[index].includes("|")) {
+        tableLines.push(lines[index]);
+        index += 1;
+      }
+      const rows = tableLines
+        .filter((row) => !/^\s*\|?\s*:?-{3,}/.test(row))
+        .map((row) => row.split("|").map((cell) => cell.trim()).filter(Boolean));
+      const [header, ...body] = rows;
+      blocks.push(
+        <div key={`table-${index}`} className="my-3 overflow-x-auto rounded-md border border-slate-700">
+          <table className="min-w-full divide-y divide-slate-800 text-left text-xs">
+            {header ? (
+              <thead className="bg-slate-950 text-slate-400">
+                <tr>
+                  {header.map((cell) => (
+                    <th key={cell} className="px-3 py-2 font-semibold">
+                      <InlineMarkdown text={cell} />
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+            ) : null}
+            <tbody className="divide-y divide-slate-800 bg-slate-900">
+              {body.map((row, rowIndex) => (
+                <tr key={`row-${rowIndex}`}>
+                  {row.map((cell, cellIndex) => (
+                    <td key={`${cell}-${cellIndex}`} className="px-3 py-2 text-slate-200">
+                      <InlineMarkdown text={cell} />
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>,
+      );
+      continue;
+    }
+
+    if (line.startsWith("**") && line.endsWith("**") && line.length < 90) {
+      blocks.push(
+        <h3 key={`heading-${index}`} className="mt-3 text-sm font-semibold uppercase text-cyan-200">
+          {line.slice(2, -2)}
+        </h3>,
+      );
+    } else if (/^[-*]\s+/.test(line)) {
+      const items: string[] = [];
+      while (index < lines.length && /^[-*]\s+/.test(lines[index].trim())) {
+        items.push(lines[index].trim().replace(/^[-*]\s+/, ""));
+        index += 1;
+      }
+      blocks.push(
+        <ul key={`list-${index}`} className="my-2 space-y-1 pl-4">
+          {items.map((item) => (
+            <li key={item} className="list-disc text-slate-200">
+              <InlineMarkdown text={item} />
+            </li>
+          ))}
+        </ul>,
+      );
+      continue;
+    } else {
+      blocks.push(
+        <p key={`p-${index}`} className="my-2 leading-6 text-slate-200">
+          <InlineMarkdown text={line} />
+        </p>,
+      );
+    }
+    index += 1;
+  }
+
+  return <div className="text-sm">{blocks}</div>;
+}
+
+function MarketCopilot({ selectedGameId, sportKey }: { selectedGameId: string | null; sportKey: SportKey }) {
+  const [input, setInput] = useState("");
+  const [messages, setMessages] = useState<ChatMessage[]>([
+    {
+      role: "assistant",
+      content: "Ask about opportunity scores, stale prices, no-vig probabilities, injuries, or why a game is worth attention.",
+    },
+  ]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  function sendMessage(event: React.FormEvent) {
+    event.preventDefault();
+    const message = input.trim();
+    if (!message || loading) return;
+
+    setMessages((current) => [...current, { role: "user", content: message }]);
+    setInput("");
+    setLoading(true);
+    setError(null);
+
+    fetch(`${API_BASE}/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message, game_id: selectedGameId, sport_key: sportKey }),
+    })
+      .then((response) => {
+        if (!response.ok) throw new Error("Market Copilot could not answer right now.");
+        return response.json();
+      })
+      .then((data: ChatResponse) => {
+        setMessages((current) => [...current, { role: "assistant", content: data.answer }]);
+      })
+      .catch((caught: Error) => setError(caught.message))
+      .finally(() => setLoading(false));
+  }
+
+  return (
+    <section className="rounded-md border border-slate-800 bg-slate-900">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 px-4 py-3">
+        <div className="flex items-center gap-2">
+          <Bot className="h-4 w-4 text-cyan-300" />
+          <h2 className="text-sm font-semibold uppercase text-slate-200">Market Copilot</h2>
+        </div>
+        <span className="text-xs font-semibold text-slate-500">{selectedGameId ? "Game context active" : "Board context"}</span>
+      </div>
+
+      <div className="grid min-h-[620px] gap-4 p-4 lg:grid-cols-[260px_minmax(0,1fr)]">
+        <aside className="rounded-md border border-slate-800 bg-slate-950 p-3">
+          <div className="mb-3 text-xs font-semibold uppercase text-slate-500">Suggested Prompts</div>
+          {[
+            "Which games should I inspect first?",
+            "Explain the top opportunity score.",
+            "Where do books disagree most?",
+            "Summarize stale prices and EV.",
+          ].map((prompt) => (
+            <button
+              key={prompt}
+              type="button"
+              onClick={() => setInput(prompt)}
+              className="mb-2 block w-full rounded-md border border-slate-800 bg-slate-900 px-3 py-2 text-left text-sm text-slate-300 hover:border-cyan-400/50 hover:text-cyan-100"
+            >
+              {prompt}
+            </button>
+          ))}
+        </aside>
+
+        <div className="flex min-h-0 flex-col rounded-md border border-slate-800 bg-slate-950">
+          <div className="flex-1 space-y-3 overflow-y-auto p-4">
+            {messages.map((message, index) => (
+              <div
+                key={`${message.role}-${index}`}
+                className={`rounded-md border px-3 py-2 ${
+                  message.role === "assistant"
+                    ? "border-slate-800 bg-slate-900"
+                    : "ml-auto max-w-3xl border-cyan-400/30 bg-cyan-400/10 text-cyan-50"
+                }`}
+              >
+                {message.role === "assistant" ? <MarkdownContent content={message.content} /> : <div className="text-sm leading-6">{message.content}</div>}
+              </div>
+            ))}
+            {loading ? <div className="rounded-md border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-500">Thinking...</div> : null}
+            {error ? <div className="rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-200">{error}</div> : null}
+          </div>
+
+          <form onSubmit={sendMessage} className="border-t border-slate-800 p-3">
+            <div className="flex gap-2">
+              <input
+                value={input}
+                onChange={(event) => setInput(event.target.value)}
+                className="min-w-0 flex-1 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none placeholder:text-slate-600"
+                placeholder={selectedGameId ? "Ask about this game" : "Ask about the board"}
+                maxLength={800}
+              />
+              <button
+                type="submit"
+                disabled={loading || !input.trim()}
+                className="rounded-md border border-cyan-400/50 bg-cyan-400/10 p-2 text-cyan-100 hover:bg-cyan-400/20 disabled:cursor-not-allowed disabled:opacity-50"
+                aria-label="Send chat message"
+              >
+                <Send className="h-4 w-4" />
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function CommandBar({
   command,
   inputRef,
@@ -851,6 +1087,10 @@ function CommandBar({
     }
     if (["screen", "screener", "filter", "filters"].includes(value)) {
       onSetView("screener");
+      return;
+    }
+    if (["copilot", "chat", "ai", "assistant"].includes(value)) {
+      onSetView("copilot");
       return;
     }
     if (["board", "mlb", "games"].includes(value)) {
@@ -1639,6 +1879,7 @@ function App() {
   const [detail, setDetail] = useState<GameDetail | null>(null);
   const [gameContext, setGameContext] = useState<GameContext | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>("board");
+  const [activeSport, setActiveSport] = useState<SportKey>("basketball_nba");
   const [command, setCommand] = useState("");
   const [watchlist, setWatchlist] = useState<string[]>(() => readStoredJson<string[]>(WATCHLIST_STORAGE_KEY, []));
   const [betIdeas, setBetIdeas] = useState<SavedBetIdea[]>(() => readStoredJson<SavedBetIdea[]>(BET_IDEAS_STORAGE_KEY, []));
@@ -1742,6 +1983,9 @@ function App() {
       } else if (key === "s") {
         setSelectedGameId(null);
         setViewMode("screener");
+      } else if (key === "c") {
+        setSelectedGameId(null);
+        setViewMode("copilot");
       }
     }
 
@@ -1779,13 +2023,20 @@ function App() {
       .catch((caught: Error) => setError(caught.message));
   }, [selectedGameId]);
 
-  const signalCount = games.reduce((total, game) => total + game.signals.length, 0);
+  const visibleGames = games.filter((game) => game.sport_key === activeSport);
+  const selectedSport = sportMeta(activeSport);
+  const signalCount = visibleGames.reduce((total, game) => total + game.signals.length, 0);
   const trackedWithPrice = betIdeas
-    .map((idea) => clvCents(idea, matchingCurrentPrice(idea, games)))
+    .filter((idea) => visibleGames.some((game) => game.id === idea.game_id))
+    .map((idea) => clvCents(idea, matchingCurrentPrice(idea, visibleGames)))
     .filter((value): value is number => value !== null);
   const averageTrackedClv = trackedWithPrice.length ? trackedWithPrice.reduce((total, value) => total + value, 0) / trackedWithPrice.length : 0;
 
   function selectGame(id: string) {
+    const game = games.find((item) => item.id === id);
+    if (game && SPORTS.some((sport) => sport.key === game.sport_key)) {
+      setActiveSport(game.sport_key as SportKey);
+    }
     setSelectedGameId(id);
     setCommand("");
   }
@@ -1805,7 +2056,7 @@ function App() {
           <div>
             <div className="flex items-center gap-2 text-xs font-semibold uppercase text-emerald-300">
               <Radio className="h-4 w-4" />
-              Live MLB market feed
+              Live {selectedSport.label} market feed
             </div>
             <h1 className="mt-1 text-xl font-semibold">Sports Market Terminal</h1>
           </div>
@@ -1829,7 +2080,7 @@ function App() {
           <CommandBar
             command={command}
             inputRef={commandInputRef}
-            games={games}
+            games={visibleGames}
             onCommandChange={setCommand}
             onSelectGame={selectGame}
             onSetView={(view) => {
@@ -1846,14 +2097,41 @@ function App() {
             <span>N Notes</span>
             <span>T Track</span>
             <span>S Screen</span>
+            <span>C Copilot</span>
             <span>Esc Back</span>
           </div>
         </div>
       </header>
 
+      <div className="border-b border-slate-800 bg-slate-950 px-5 py-3">
+        <div className="flex flex-wrap gap-2">
+          {SPORTS.map((sport) => {
+            const active = activeSport === sport.key;
+            const count = games.filter((game) => game.sport_key === sport.key).length;
+            return (
+              <button
+                key={sport.key}
+                type="button"
+                onClick={() => {
+                  setActiveSport(sport.key);
+                  setSelectedGameId(null);
+                  setViewMode("board");
+                }}
+                className={`rounded-md border px-4 py-2 text-sm font-semibold ${
+                  active ? "border-cyan-400/50 bg-cyan-400 text-slate-950" : "border-slate-700 bg-slate-900 text-slate-300 hover:border-cyan-400/50 hover:text-cyan-100"
+                }`}
+              >
+                {sport.label}
+                <span className={`ml-2 ${active ? "text-slate-700" : "text-slate-500"}`}>{count}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       <div className="border-b border-slate-800 bg-slate-950 px-5 py-4">
         <div className="grid gap-3 md:grid-cols-4">
-          <Stat icon={<Activity className="h-4 w-4" />} label="MLB Games" value={String(games.length)} />
+          <Stat icon={<Activity className="h-4 w-4" />} label={selectedSport.title} value={String(visibleGames.length)} />
           <Stat icon={<AlertTriangle className="h-4 w-4" />} label="Active Signals" value={String(signalCount)} />
           <Stat icon={<Star className="h-4 w-4" />} label="Watchlist" value={String(watchlist.length)} />
           <Stat icon={<TrendingUp className="h-4 w-4" />} label="Avg CLV" value={`${averageTrackedClv >= 0 ? "+" : ""}${averageTrackedClv.toFixed(1)}c`} />
@@ -1882,6 +2160,7 @@ function App() {
                 ["notebook", "Notebook"],
                 ["tracking", "Tracking"],
                 ["screener", "Screener"],
+                ["copilot", "Copilot"],
               ].map(([key, label]) => (
                 <button
                   key={key}
@@ -1896,22 +2175,24 @@ function App() {
               ))}
             </div>
             {viewMode === "opportunities" ? (
-              <OpportunityBoard games={games} onSelectGame={selectGame} />
+              <OpportunityBoard games={visibleGames} onSelectGame={selectGame} />
             ) : viewMode === "watchlist" ? (
-              <WatchlistBoard games={games} watchlist={watchlist} onSelectGame={selectGame} onToggleWatch={toggleWatchlist} />
+              <WatchlistBoard games={visibleGames} watchlist={watchlist} onSelectGame={selectGame} onToggleWatch={toggleWatchlist} />
             ) : viewMode === "notebook" ? (
               <NotebookView
-                ideas={betIdeas}
+                ideas={betIdeas.filter((idea) => visibleGames.some((game) => game.id === idea.game_id))}
                 onDelete={(id) => setBetIdeas((current) => current.filter((idea) => idea.id !== id))}
                 onSelectGame={selectGame}
               />
             ) : viewMode === "tracking" ? (
-              <TrackingView ideas={betIdeas} games={games} onSelectGame={selectGame} />
+              <TrackingView ideas={betIdeas.filter((idea) => visibleGames.some((game) => game.id === idea.game_id))} games={visibleGames} onSelectGame={selectGame} />
             ) : viewMode === "screener" ? (
-              <ScreenerView games={games} watchlist={watchlist} ideas={betIdeas} onSelectGame={selectGame} />
+              <ScreenerView games={visibleGames} watchlist={watchlist} ideas={betIdeas} onSelectGame={selectGame} />
+            ) : viewMode === "copilot" ? (
+              <MarketCopilot selectedGameId={selectedGameId} sportKey={activeSport} />
             ) : (
               <div className="grid gap-4">
-                {games.map((game) => (
+                {visibleGames.length ? visibleGames.map((game) => (
                   <GameCard
                     key={game.id}
                     game={game}
@@ -1919,7 +2200,11 @@ function App() {
                     onSelect={selectGame}
                     onToggleWatch={toggleWatchlist}
                   />
-                ))}
+                )) : (
+                  <div className="rounded-md border border-slate-800 bg-slate-900 px-4 py-5 text-sm text-slate-500">
+                    No {selectedSport.label} games are loaded yet.
+                  </div>
+                )}
               </div>
             )}
           </section>

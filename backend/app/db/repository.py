@@ -285,6 +285,20 @@ def get_today_game_summaries(db: Session) -> list[GameSummary]:
     return sorted(summaries, key=lambda game: (-game.opportunity_score, game.commence_time))
 
 
+def get_recent_game_summaries(db: Session, limit: int = 5) -> list[GameSummary]:
+    games = list(
+        db.scalars(
+            select(Game)
+            .options(joinedload(Game.home_team), joinedload(Game.away_team))
+            .order_by(Game.commence_time.desc())
+            .limit(limit)
+        )
+        .all()
+    )
+    summaries = [_build_summary(db, game) for game in games]
+    return sorted(summaries, key=lambda game: (-game.opportunity_score, game.commence_time))
+
+
 def _get_or_create_team(
     db: Session,
     cache: dict[tuple[str, str], Team],

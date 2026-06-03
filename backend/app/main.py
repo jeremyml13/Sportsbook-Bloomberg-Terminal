@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import context, games, ingest
+from app.api.routes import chat, context, games, ingest
 from app.core.config import settings
 
 app = FastAPI(
@@ -21,6 +21,7 @@ app.add_middleware(
 app.include_router(games.router)
 app.include_router(ingest.router)
 app.include_router(context.router)
+app.include_router(chat.router)
 
 
 @app.get("/health")

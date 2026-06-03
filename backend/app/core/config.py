@@ -13,6 +13,9 @@ class Settings(BaseSettings):
     sportsdataio_base_url: str = "https://api.sportsdata.io/v3"
     odds_api_key: str | None = None
     odds_api_base_url: str = "https://api.the-odds-api.com/v4"
+    do_model_access_key: str | None = None
+    do_inference_base_url: str = "https://inference.do-ai.run"
+    do_inference_model: str = "openai-gpt-oss-20b"
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

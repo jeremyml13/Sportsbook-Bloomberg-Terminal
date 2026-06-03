@@ -201,3 +201,15 @@ class GamePlayerContextRead(BaseModel):
     injuries: list[PlayerInjuryRead]
     injury_events: list[PlayerInjuryEventRead]
     news: list[PlayerNewsRead]
+
+
+class ChatRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=800)
+    game_id: str | None = None
+    sport_key: str | None = None
+
+
+class ChatResponse(BaseModel):
+    answer: str
+    model: str
+    context_games: int
