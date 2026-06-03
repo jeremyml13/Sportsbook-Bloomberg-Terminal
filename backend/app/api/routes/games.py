@@ -2,9 +2,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from app.db.repository import get_game_detail, get_game_odds_history, get_game_signals, get_today_game_summaries
+from app.db.repository import get_game_detail, get_game_odds_history, get_game_signals, get_odds_freshness, get_today_game_summaries
 from app.db.session import get_db
-from app.schemas.markets import GameDetail, GameSummary, MarketSignalRead, OddsHistoryPoint
+from app.schemas.markets import GameDetail, GameSummary, MarketSignalRead, OddsFreshnessRead, OddsHistoryPoint
 from app.services.mock_data import get_mock_game, mock_games
 
 router = APIRouter(prefix="/games", tags=["games"])
@@ -20,6 +20,11 @@ def get_today_games(db: Session = Depends(get_db)) -> list[GameSummary]:
         db.rollback()
 
     return mock_games
+
+
+@router.get("/meta/odds-freshness", response_model=OddsFreshnessRead)
+def get_odds_freshness_route(db: Session = Depends(get_db)) -> OddsFreshnessRead:
+    return get_odds_freshness(db)
 
 
 @router.get("/{game_id}", response_model=GameDetail)

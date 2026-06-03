@@ -1,7 +1,7 @@
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.db.models import Game, MarketSignal, OddsSnapshot, PlayerInjury, PlayerInjuryEvent, PlayerNews, Sportsbook, Team
@@ -14,6 +14,7 @@ from app.schemas.markets import (
     BestPriceRead,
     MovementAlertRead,
     NoVigProbabilityRead,
+    OddsFreshnessRead,
     OddsHistoryPoint,
     OddsLine,
     PriceAlertRead,
@@ -403,6 +404,22 @@ def get_game_odds_history(db: Session, external_id: str) -> list[OddsHistoryPoin
 def get_game_signals(db: Session, external_id: str) -> list[MarketSignalRead] | None:
     detail = get_game_detail(db, external_id)
     return None if detail is None else detail.signals
+
+
+def get_odds_freshness(db: Session) -> OddsFreshnessRead:
+    latest_snapshot_time = db.scalar(select(func.max(OddsSnapshot.snapshot_time)))
+    snapshot_count = db.scalar(select(func.count(OddsSnapshot.id))) or 0
+    sportsbook_count = db.scalar(select(func.count(func.distinct(OddsSnapshot.sportsbook_id)))) or 0
+    age_seconds = None
+    if latest_snapshot_time is not None:
+        age_seconds = int((datetime.now(UTC) - latest_snapshot_time).total_seconds())
+
+    return OddsFreshnessRead(
+        latest_snapshot_time=latest_snapshot_time,
+        age_seconds=age_seconds,
+        sportsbook_count=sportsbook_count,
+        snapshot_count=snapshot_count,
+    )
 
 
 def _build_summary(db: Session, game: Game) -> GameSummary:

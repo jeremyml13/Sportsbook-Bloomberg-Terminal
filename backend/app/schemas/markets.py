@@ -125,6 +125,13 @@ class IngestOddsResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class OddsFreshnessRead(BaseModel):
+    latest_snapshot_time: datetime | None = None
+    age_seconds: int | None = None
+    sportsbook_count: int = 0
+    snapshot_count: int = 0
+
+
 class PlayerInjuryRead(BaseModel):
     external_player_id: str
     display_name: str

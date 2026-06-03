@@ -1,6 +1,6 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import ReactDOM from "react-dom/client";
-import { Activity, AlertTriangle, ArrowLeft, Clock, Newspaper, Radio, Search, Star, Trash2, TrendingUp } from "lucide-react";
+import { Activity, AlertTriangle, ArrowLeft, Clock, Newspaper, Radio, RefreshCw, Search, Star, Trash2, TrendingUp } from "lucide-react";
 import {
   CartesianGrid,
   Line,
@@ -172,7 +172,8 @@ type PlayerInjuryEvent = {
 };
 
 type ChartMode = "home_spread" | "moneyline" | "total";
-type ViewMode = "board" | "opportunities" | "watchlist" | "notebook";
+type ViewMode = "board" | "opportunities" | "watchlist" | "notebook" | "tracking" | "screener";
+type ScreenerFilter = "stale" | "disagreement" | "soon" | "watchlist" | "saved" | "quiet";
 
 type SavedBetIdea = {
   id: string;
@@ -188,6 +189,21 @@ type SavedBetIdea = {
   quarter_kelly: number;
   note: string;
   created_at: string;
+};
+
+type OddsFreshness = {
+  latest_snapshot_time: string | null;
+  age_seconds: number | null;
+  sportsbook_count: number;
+  snapshot_count: number;
+};
+
+type IngestOddsResponse = {
+  accepted: boolean;
+  source: string;
+  games_seen: number;
+  snapshots_normalized: number;
+  message: string;
 };
 
 const CHART_MODES: { key: ChartMode; label: string; description: string }[] = [
@@ -225,6 +241,16 @@ function formatTime(value: string) {
 
 function formatDateTime(value: string) {
   return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(value));
+}
+
+function formatAge(seconds: number | null) {
+  if (seconds === null) return "No odds stored";
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 48) return `${hours}h ${minutes % 60}m ago`;
+  return `${Math.floor(hours / 24)}d ago`;
 }
 
 function firstLine(markets: OddsLine[], sportsbook = "DraftKings") {
@@ -281,6 +307,27 @@ function marketRegimes(game: GameSummary) {
   return regimes;
 }
 
+function startsWithinHours(game: GameSummary, hours: number) {
+  const now = Date.now();
+  const start = new Date(game.commence_time).getTime();
+  return start >= now && start <= now + hours * 60 * 60 * 1000;
+}
+
+function gameMatchesScreenerFilter(
+  game: GameSummary,
+  filter: ScreenerFilter,
+  watchlist: string[],
+  ideas: SavedBetIdea[],
+) {
+  if (filter === "stale") return game.price_alerts.length > 0;
+  if (filter === "disagreement") return game.book_disagreement_score >= 1;
+  if (filter === "soon") return startsWithinHours(game, 3);
+  if (filter === "watchlist") return watchlist.includes(game.id);
+  if (filter === "saved") return ideas.some((idea) => idea.game_id === game.id);
+  if (filter === "quiet") return marketRegimes(game).includes("Quiet Market");
+  return true;
+}
+
 function signalClass(signal: MarketSignal) {
   if (signal.severity === "warning") return "border-amber-400/50 bg-amber-400/10 text-amber-100";
   if (signal.severity === "placeholder") return "border-slate-500/70 bg-slate-800 text-slate-300";
@@ -319,6 +366,24 @@ function readStoredJson<T>(key: string, fallback: T): T {
   } catch {
     return fallback;
   }
+}
+
+function matchingCurrentPrice(idea: SavedBetIdea, games: GameSummary[]) {
+  const game = games.find((item) => item.id === idea.game_id);
+  if (!game) return null;
+
+  const marketRows = game.current_markets[idea.market_type];
+  const sameMarket = marketRows.filter((line) => line.selection === idea.selection);
+  const sameLine = sameMarket.filter((line) => line.line === idea.line);
+  const candidates = sameLine.length ? sameLine : sameMarket;
+  if (!candidates.length) return null;
+
+  return candidates.reduce((best, line) => (line.odds_american > best.odds_american ? line : best), candidates[0]);
+}
+
+function clvCents(idea: SavedBetIdea, current: OddsLine | null) {
+  if (!current) return null;
+  return idea.odds_american - current.odds_american;
 }
 
 function InjuryNewsPanel({ context }: { context: GameContext | null }) {
@@ -747,12 +812,14 @@ function Stat({ icon, label, value }: { icon: React.ReactNode; label: string; va
 
 function CommandBar({
   command,
+  inputRef,
   games,
   onCommandChange,
   onSelectGame,
   onSetView,
 }: {
   command: string;
+  inputRef: React.RefObject<HTMLInputElement | null>;
   games: GameSummary[];
   onCommandChange: (value: string) => void;
   onSelectGame: (id: string) => void;
@@ -778,6 +845,14 @@ function CommandBar({
       onSetView("notebook");
       return;
     }
+    if (["track", "tracking", "clv", "performance"].includes(value)) {
+      onSetView("tracking");
+      return;
+    }
+    if (["screen", "screener", "filter", "filters"].includes(value)) {
+      onSetView("screener");
+      return;
+    }
     if (["board", "mlb", "games"].includes(value)) {
       onSetView("board");
       return;
@@ -792,6 +867,7 @@ function CommandBar({
       <form onSubmit={submitCommand} className="flex items-center gap-2 rounded-md border border-slate-700 bg-slate-950 px-3 py-2">
         <Search className="h-4 w-4 text-slate-500" />
         <input
+          ref={inputRef}
           value={command}
           onChange={(event) => onCommandChange(event.target.value)}
           className="w-full bg-transparent text-sm font-semibold text-slate-100 outline-none placeholder:text-slate-600"
@@ -966,6 +1042,243 @@ function NotebookView({
   );
 }
 
+function TrackingView({
+  ideas,
+  games,
+  onSelectGame,
+}: {
+  ideas: SavedBetIdea[];
+  games: GameSummary[];
+  onSelectGame: (id: string) => void;
+}) {
+  const tracked = ideas.map((idea) => {
+    const current = matchingCurrentPrice(idea, games);
+    return { idea, current, clv: clvCents(idea, current) };
+  });
+  const priced = tracked.filter((row) => row.current && row.clv !== null);
+  const positive = priced.filter((row) => (row.clv ?? 0) > 0).length;
+  const averageClv = priced.length ? priced.reduce((total, row) => total + (row.clv ?? 0), 0) / priced.length : 0;
+
+  return (
+    <section className="space-y-4">
+      <div className="grid gap-3 md:grid-cols-3">
+        <Stat icon={<TrendingUp className="h-4 w-4" />} label="Tracked Ideas" value={String(ideas.length)} />
+        <Stat icon={<Activity className="h-4 w-4" />} label="Beating Market" value={`${positive} / ${priced.length}`} />
+        <Stat icon={<AlertTriangle className="h-4 w-4" />} label="Avg CLV" value={`${averageClv >= 0 ? "+" : ""}${averageClv.toFixed(1)}c`} />
+      </div>
+
+      <section className="rounded-md border border-slate-800 bg-slate-900">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 px-4 py-3">
+          <div className="flex items-center gap-2">
+            <TrendingUp className="h-4 w-4 text-cyan-300" />
+            <h2 className="text-sm font-semibold uppercase text-slate-300">CLV Tracker</h2>
+          </div>
+          <span className="text-xs font-semibold text-slate-500">Saved price vs latest market</span>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-slate-800 text-sm">
+            <thead className="bg-slate-950 text-left text-[11px] font-semibold uppercase text-slate-500">
+              <tr>
+                <th className="px-4 py-3">Game</th>
+                <th className="px-4 py-3">Bet</th>
+                <th className="px-4 py-3">Saved</th>
+                <th className="px-4 py-3">Current Best</th>
+                <th className="px-4 py-3">CLV</th>
+                <th className="px-4 py-3">Thesis</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-800">
+              {tracked.length ? (
+                tracked.map(({ idea, current, clv }) => {
+                  const isPositive = (clv ?? 0) > 0;
+                  return (
+                    <tr key={idea.id} className="bg-slate-900">
+                      <td className="px-4 py-3">
+                        <button type="button" onClick={() => onSelectGame(idea.game_id)} className="text-left font-semibold text-slate-100 hover:text-cyan-200">
+                          {idea.game_label}
+                        </button>
+                        <div className="mt-1 text-xs text-slate-500">{formatDateTime(idea.created_at)}</div>
+                      </td>
+                      <td className="px-4 py-3 text-slate-300">
+                        <div className="font-semibold">{idea.selection}</div>
+                        <div className="text-xs capitalize text-slate-500">
+                          {idea.market_type} {idea.line !== null ? formatLine(idea.line) : ""}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-slate-300">
+                        {formatOdds(idea.odds_american)}
+                        <div className="text-xs text-slate-500">{idea.sportsbook}</div>
+                      </td>
+                      <td className="px-4 py-3 text-slate-300">
+                        {current ? (
+                          <>
+                            {formatOdds(current.odds_american)}
+                            <div className="text-xs text-slate-500">{current.sportsbook}</div>
+                          </>
+                        ) : (
+                          "-"
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        {clv === null ? (
+                          <span className="text-slate-600">-</span>
+                        ) : (
+                          <span className={`rounded border px-2 py-1 text-xs font-semibold ${isPositive ? "border-emerald-400/40 bg-emerald-400/10 text-emerald-200" : "border-rose-400/40 bg-rose-400/10 text-rose-200"}`}>
+                            {clv >= 0 ? "+" : ""}
+                            {clv}c
+                          </span>
+                        )}
+                      </td>
+                      <td className="max-w-md px-4 py-3 text-slate-400">{idea.note || "-"}</td>
+                    </tr>
+                  );
+                })
+              ) : (
+                <tr>
+                  <td colSpan={6} className="bg-slate-900 px-4 py-5 text-slate-500">
+                    No saved bet ideas yet. Save ideas from a game detail page to start tracking CLV.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </section>
+  );
+}
+
+function ScreenerView({
+  games,
+  watchlist,
+  ideas,
+  onSelectGame,
+}: {
+  games: GameSummary[];
+  watchlist: string[];
+  ideas: SavedBetIdea[];
+  onSelectGame: (id: string) => void;
+}) {
+  const [activeFilters, setActiveFilters] = useState<ScreenerFilter[]>(["stale"]);
+  const filters: { key: ScreenerFilter; label: string }[] = [
+    { key: "stale", label: "Stale Price" },
+    { key: "disagreement", label: "High Disagreement" },
+    { key: "soon", label: "Starts Soon" },
+    { key: "watchlist", label: "Watchlist" },
+    { key: "saved", label: "Saved Ideas" },
+    { key: "quiet", label: "Quiet Market" },
+  ];
+  const rows = games
+    .filter((game) =>
+      activeFilters.length
+        ? activeFilters.every((filter) => gameMatchesScreenerFilter(game, filter, watchlist, ideas))
+        : true,
+    )
+    .sort((a, b) => b.opportunity_score - a.opportunity_score);
+
+  function toggleFilter(filter: ScreenerFilter) {
+    setActiveFilters((current) =>
+      current.includes(filter) ? current.filter((item) => item !== filter) : [...current, filter],
+    );
+  }
+
+  return (
+    <section className="space-y-4">
+      <div className="rounded-md border border-slate-800 bg-slate-900 p-4">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <Search className="h-4 w-4 text-cyan-300" />
+            <h2 className="text-sm font-semibold uppercase text-slate-300">Market Screener</h2>
+          </div>
+          <span className="text-xs font-semibold text-slate-500">{rows.length} games matched</span>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {filters.map((filter) => {
+            const active = activeFilters.includes(filter.key);
+            return (
+              <button
+                key={filter.key}
+                type="button"
+                onClick={() => toggleFilter(filter.key)}
+                className={`rounded-md border px-3 py-1.5 text-sm font-semibold ${
+                  active ? "border-cyan-400/50 bg-cyan-400/10 text-cyan-100" : "border-slate-700 bg-slate-950 text-slate-400 hover:text-slate-100"
+                }`}
+              >
+                {filter.label}
+              </button>
+            );
+          })}
+          <button
+            type="button"
+            onClick={() => setActiveFilters([])}
+            className="rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm font-semibold text-slate-400 hover:text-slate-100"
+          >
+            Clear
+          </button>
+        </div>
+      </div>
+
+      <section className="rounded-md border border-slate-800 bg-slate-900">
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-slate-800 text-sm">
+            <thead className="bg-slate-950 text-left text-[11px] font-semibold uppercase text-slate-500">
+              <tr>
+                <th className="px-4 py-3">Game</th>
+                <th className="px-4 py-3">Start</th>
+                <th className="px-4 py-3">Regime</th>
+                <th className="px-4 py-3">Opp</th>
+                <th className="px-4 py-3">Best Alert</th>
+                <th className="px-4 py-3">Saved</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-800">
+              {rows.length ? (
+                rows.map((game) => {
+                  const alert = game.price_alerts[0];
+                  const savedCount = ideas.filter((idea) => idea.game_id === game.id).length;
+                  return (
+                    <tr key={game.id} className="bg-slate-900">
+                      <td className="px-4 py-3">
+                        <button type="button" onClick={() => onSelectGame(game.id)} className="text-left font-semibold text-slate-100 hover:text-cyan-200">
+                          {gameLabel(game)}
+                        </button>
+                        <div className="mt-1 text-xs text-slate-500">{moneylineText(game)}</div>
+                      </td>
+                      <td className="px-4 py-3 text-slate-300">{formatTime(game.commence_time)}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-wrap gap-1">
+                          {marketRegimes(game).slice(0, 2).map((regime) => (
+                            <span key={`${game.id}-${regime}`} className="rounded border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-slate-300">
+                              {regime}
+                            </span>
+                          ))}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-cyan-200">{game.opportunity_score.toFixed(1)}</td>
+                      <td className="px-4 py-3 text-slate-300">
+                        {alert ? `${alert.selection} ${formatOdds(alert.odds_american)} · ${alert.edge_to_market.toFixed(1)} pp` : "-"}
+                      </td>
+                      <td className="px-4 py-3 text-slate-300">
+                        {watchlist.includes(game.id) ? "Pinned" : savedCount ? `${savedCount} idea${savedCount === 1 ? "" : "s"}` : "-"}
+                      </td>
+                    </tr>
+                  );
+                })
+              ) : (
+                <tr>
+                  <td colSpan={6} className="bg-slate-900 px-4 py-5 text-slate-500">
+                    No games match the selected filters.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </section>
+  );
+}
+
 function GameCard({
   game,
   watched = false,
@@ -1085,6 +1398,80 @@ function buildChartData(detail: GameDetail, mode: ChartMode) {
     }
     return point;
   });
+}
+
+function SportsbookMatrix({ rows }: { rows: OddsLine[] }) {
+  const sportsbooks = Array.from(new Set(rows.map((row) => row.sportsbook))).sort();
+  const grouped = Array.from(
+    rows.reduce((acc, row) => {
+      const key = `${row.market_type}|${row.selection}|${row.line ?? "na"}`;
+      const current = acc.get(key) ?? {
+        market_type: row.market_type,
+        selection: row.selection,
+        line: row.line,
+        prices: [] as OddsLine[],
+      };
+      current.prices.push(row);
+      acc.set(key, current);
+      return acc;
+    }, new Map<string, { market_type: MarketType; selection: string; line: number | null; prices: OddsLine[] }>())
+    .values(),
+  ).sort((a, b) => `${a.market_type}-${a.selection}`.localeCompare(`${b.market_type}-${b.selection}`));
+
+  return (
+    <section className="rounded-md border border-slate-800 bg-slate-900">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 px-4 py-3">
+        <div className="flex items-center gap-2">
+          <ArrowLeft className="h-4 w-4 rotate-180 text-cyan-300" />
+          <h3 className="text-sm font-semibold uppercase text-slate-300">Sportsbook Matrix</h3>
+        </div>
+        <span className="text-xs font-semibold text-slate-500">{sportsbooks.length} books</span>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="min-w-full divide-y divide-slate-800 text-sm">
+          <thead className="bg-slate-950 text-left text-[11px] font-semibold uppercase text-slate-500">
+            <tr>
+              <th className="sticky left-0 z-10 bg-slate-950 px-4 py-3">Market</th>
+              {sportsbooks.map((book) => (
+                <th key={book} className="px-4 py-3">{book}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-800">
+            {grouped.map((group) => {
+              const bestOdds = Math.max(...group.prices.map((price) => price.odds_american));
+              return (
+                <tr key={`${group.market_type}-${group.selection}-${group.line}`} className="bg-slate-900">
+                  <td className="sticky left-0 z-10 bg-slate-900 px-4 py-3">
+                    <div className="text-xs font-semibold uppercase text-slate-500">{group.market_type}</div>
+                    <div className="mt-1 font-semibold text-slate-100">
+                      {group.selection} {group.line !== null ? formatLine(group.line) : ""}
+                    </div>
+                  </td>
+                  {sportsbooks.map((book) => {
+                    const price = group.prices.find((line) => line.sportsbook === book);
+                    const isBest = price?.odds_american === bestOdds;
+                    return (
+                      <td key={`${group.market_type}-${group.selection}-${book}`} className="px-4 py-3">
+                        {price ? (
+                          <div className={`rounded border px-2 py-1 font-semibold ${isBest ? "border-emerald-400/40 bg-emerald-400/10 text-emerald-200" : "border-slate-800 bg-slate-950 text-slate-300"}`}>
+                            {formatOdds(price.odds_american)}
+                            <div className="mt-0.5 text-[11px] font-medium text-slate-500">{formatPercent(price.implied_probability)}</div>
+                          </div>
+                        ) : (
+                          <span className="text-slate-700">-</span>
+                        )}
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
 }
 
 function OddsTable({ rows }: { rows: OddsLine[] }) {
@@ -1237,13 +1624,17 @@ function GameDetailView({
 
       <InjuryNewsPanel context={context} />
 
+      <SportsbookMatrix rows={detail.book_table} />
+
       <OddsTable rows={detail.book_table} />
     </section>
   );
 }
 
 function App() {
+  const commandInputRef = useRef<HTMLInputElement | null>(null);
   const [games, setGames] = useState<GameSummary[]>([]);
+  const [freshness, setFreshness] = useState<OddsFreshness | null>(null);
   const [selectedGameId, setSelectedGameId] = useState<string | null>(null);
   const [detail, setDetail] = useState<GameDetail | null>(null);
   const [gameContext, setGameContext] = useState<GameContext | null>(null);
@@ -1252,8 +1643,10 @@ function App() {
   const [watchlist, setWatchlist] = useState<string[]>(() => readStoredJson<string[]>(WATCHLIST_STORAGE_KEY, []));
   const [betIdeas, setBetIdeas] = useState<SavedBetIdea[]>(() => readStoredJson<SavedBetIdea[]>(BET_IDEAS_STORAGE_KEY, []));
   const [error, setError] = useState<string | null>(null);
+  const [refreshingOdds, setRefreshingOdds] = useState(false);
+  const [refreshMessage, setRefreshMessage] = useState<string | null>(null);
 
-  useEffect(() => {
+  function loadGames() {
     fetch(`${API_BASE}/games/today`)
       .then((response) => {
         if (!response.ok) throw new Error("Could not load today's board.");
@@ -1264,6 +1657,39 @@ function App() {
         setError(null);
       })
       .catch((caught: Error) => setError(caught.message));
+  }
+
+  function loadFreshness() {
+    fetch(`${API_BASE}/games/meta/odds-freshness`)
+      .then((response) => {
+        if (!response.ok) throw new Error("Could not load odds freshness.");
+        return response.json();
+      })
+      .then((data: OddsFreshness) => setFreshness(data))
+      .catch(() => setFreshness(null));
+  }
+
+  function refreshOdds() {
+    setRefreshingOdds(true);
+    setRefreshMessage(null);
+    fetch(`${API_BASE}/ingest/odds-api/mlb`, { method: "POST" })
+      .then((response) => {
+        if (!response.ok) throw new Error("Could not refresh odds.");
+        return response.json();
+      })
+      .then((data: IngestOddsResponse) => {
+        setRefreshMessage(data.message);
+        loadGames();
+        loadFreshness();
+        setError(null);
+      })
+      .catch((caught: Error) => setError(caught.message))
+      .finally(() => setRefreshingOdds(false));
+  }
+
+  useEffect(() => {
+    loadGames();
+    loadFreshness();
   }, []);
 
   useEffect(() => {
@@ -1273,6 +1699,55 @@ function App() {
   useEffect(() => {
     window.localStorage.setItem(BET_IDEAS_STORAGE_KEY, JSON.stringify(betIdeas));
   }, [betIdeas]);
+
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      const target = event.target as HTMLElement | null;
+      const isTyping =
+        target?.tagName === "INPUT" ||
+        target?.tagName === "TEXTAREA" ||
+        target?.tagName === "SELECT" ||
+        target?.isContentEditable;
+      if (isTyping && event.key !== "Escape") {
+        return;
+      }
+
+      if (event.key === "/") {
+        event.preventDefault();
+        commandInputRef.current?.focus();
+        return;
+      }
+      if (event.key === "Escape") {
+        setSelectedGameId(null);
+        commandInputRef.current?.blur();
+        return;
+      }
+
+      const key = event.key.toLowerCase();
+      if (key === "b") {
+        setSelectedGameId(null);
+        setViewMode("board");
+      } else if (key === "o") {
+        setSelectedGameId(null);
+        setViewMode("opportunities");
+      } else if (key === "w") {
+        setSelectedGameId(null);
+        setViewMode("watchlist");
+      } else if (key === "n") {
+        setSelectedGameId(null);
+        setViewMode("notebook");
+      } else if (key === "t") {
+        setSelectedGameId(null);
+        setViewMode("tracking");
+      } else if (key === "s") {
+        setSelectedGameId(null);
+        setViewMode("screener");
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   useEffect(() => {
     if (!selectedGameId) {
@@ -1305,8 +1780,10 @@ function App() {
   }, [selectedGameId]);
 
   const signalCount = games.reduce((total, game) => total + game.signals.length, 0);
-  const sportsbookCount = new Set(games.flatMap((game) => Object.values(game.current_markets).flat().map((line) => line.sportsbook))).size;
-  const opportunityCount = games.filter((game) => game.opportunity_score > 0 || game.price_alerts.length > 0).length;
+  const trackedWithPrice = betIdeas
+    .map((idea) => clvCents(idea, matchingCurrentPrice(idea, games)))
+    .filter((value): value is number => value !== null);
+  const averageTrackedClv = trackedWithPrice.length ? trackedWithPrice.reduce((total, value) => total + value, 0) / trackedWithPrice.length : 0;
 
   function selectGame(id: string) {
     setSelectedGameId(id);
@@ -1332,13 +1809,26 @@ function App() {
             </div>
             <h1 className="mt-1 text-xl font-semibold">Sports Market Terminal</h1>
           </div>
-          <div className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-300">
-            The Odds API odds / SportsDataIO injuries
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-300">
+              Odds {formatAge(freshness?.age_seconds ?? null)}
+              {freshness?.latest_snapshot_time ? <span className="ml-2 text-slate-500">{formatDateTime(freshness.latest_snapshot_time)}</span> : null}
+            </div>
+            <button
+              type="button"
+              onClick={refreshOdds}
+              disabled={refreshingOdds}
+              className="inline-flex items-center gap-2 rounded-md border border-cyan-400/40 bg-cyan-400/10 px-3 py-2 text-sm font-semibold text-cyan-100 hover:bg-cyan-400/20 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <RefreshCw className={`h-4 w-4 ${refreshingOdds ? "animate-spin" : ""}`} />
+              {refreshingOdds ? "Refreshing" : "Refresh Odds"}
+            </button>
           </div>
         </div>
         <div className="mt-4 max-w-3xl">
           <CommandBar
             command={command}
+            inputRef={commandInputRef}
             games={games}
             onCommandChange={setCommand}
             onSelectGame={selectGame}
@@ -1348,6 +1838,16 @@ function App() {
               setCommand("");
             }}
           />
+          <div className="mt-2 flex flex-wrap gap-2 text-[11px] font-semibold uppercase text-slate-600">
+            <span>/ Search</span>
+            <span>B Board</span>
+            <span>O Opp</span>
+            <span>W Watch</span>
+            <span>N Notes</span>
+            <span>T Track</span>
+            <span>S Screen</span>
+            <span>Esc Back</span>
+          </div>
         </div>
       </header>
 
@@ -1356,12 +1856,13 @@ function App() {
           <Stat icon={<Activity className="h-4 w-4" />} label="MLB Games" value={String(games.length)} />
           <Stat icon={<AlertTriangle className="h-4 w-4" />} label="Active Signals" value={String(signalCount)} />
           <Stat icon={<Star className="h-4 w-4" />} label="Watchlist" value={String(watchlist.length)} />
-          <Stat icon={<TrendingUp className="h-4 w-4" />} label="Opportunities" value={`${opportunityCount} / ${sportsbookCount} books`} />
+          <Stat icon={<TrendingUp className="h-4 w-4" />} label="Avg CLV" value={`${averageTrackedClv >= 0 ? "+" : ""}${averageTrackedClv.toFixed(1)}c`} />
         </div>
       </div>
 
       <div className="px-5 py-5">
         {error ? <div className="rounded-md border border-red-500/40 bg-red-500/10 p-4 text-red-200">{error}</div> : null}
+        {refreshMessage ? <div className="mb-4 rounded-md border border-cyan-500/30 bg-cyan-500/10 p-4 text-sm text-cyan-100">{refreshMessage}</div> : null}
         {selectedGameId && detail ? (
           <GameDetailView
             detail={detail}
@@ -1379,6 +1880,8 @@ function App() {
                 ["opportunities", "Opportunities"],
                 ["watchlist", "Watchlist"],
                 ["notebook", "Notebook"],
+                ["tracking", "Tracking"],
+                ["screener", "Screener"],
               ].map(([key, label]) => (
                 <button
                   key={key}
@@ -1402,6 +1905,10 @@ function App() {
                 onDelete={(id) => setBetIdeas((current) => current.filter((idea) => idea.id !== id))}
                 onSelectGame={selectGame}
               />
+            ) : viewMode === "tracking" ? (
+              <TrackingView ideas={betIdeas} games={games} onSelectGame={selectGame} />
+            ) : viewMode === "screener" ? (
+              <ScreenerView games={games} watchlist={watchlist} ideas={betIdeas} onSelectGame={selectGame} />
             ) : (
               <div className="grid gap-4">
                 {games.map((game) => (
