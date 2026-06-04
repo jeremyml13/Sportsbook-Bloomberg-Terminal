@@ -1,4 +1,4 @@
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.db.models import Game, MarketSignal, OddsSnapshot, Sportsbook, Team
@@ -7,11 +7,11 @@ from app.services.odds_math import american_to_implied_probability
 
 
 def seed_mock_data(db: Session) -> dict[str, int]:
-    db.execute(delete(MarketSignal))
-    db.execute(delete(OddsSnapshot))
-    db.execute(delete(Game))
-    db.execute(delete(Team))
-    db.execute(delete(Sportsbook))
+    mock_external_ids = [game["id"] for game in ALL_GAMES]
+    mock_game_ids = select(Game.id).where(Game.external_id.in_(mock_external_ids))
+    db.execute(delete(MarketSignal).where(MarketSignal.game_id.in_(mock_game_ids)))
+    db.execute(delete(OddsSnapshot).where(OddsSnapshot.game_id.in_(mock_game_ids)))
+    db.execute(delete(Game).where(Game.external_id.in_(mock_external_ids)))
 
     sportsbooks = _seed_sportsbooks(db)
     teams = _seed_teams(db)
@@ -78,8 +78,11 @@ def seed_mock_data(db: Session) -> dict[str, int]:
 def _seed_sportsbooks(db: Session) -> dict[str, Sportsbook]:
     sportsbooks: dict[str, Sportsbook] = {}
     for title in BOOKS:
-        sportsbook = Sportsbook(key=title.lower().replace(" ", "_"), title=title, region="us")
-        db.add(sportsbook)
+        key = title.lower().replace(" ", "_")
+        sportsbook = db.scalar(select(Sportsbook).where(Sportsbook.key == key))
+        if sportsbook is None:
+            sportsbook = Sportsbook(key=key, title=title, region="us")
+            db.add(sportsbook)
         sportsbooks[title] = sportsbook
     db.flush()
     return sportsbooks
@@ -91,8 +94,13 @@ def _seed_teams(db: Session) -> dict[str, Team]:
         for _, name, abbreviation in (mock_game["home"], mock_game["away"]):
             if name in teams:
                 continue
-            team = Team(name=name, abbreviation=abbreviation, sport_key=mock_game["sport_key"])
-            db.add(team)
+            team = db.scalar(select(Team).where(Team.name == name))
+            if team is None:
+                team = Team(name=name, abbreviation=abbreviation, sport_key=mock_game["sport_key"])
+                db.add(team)
+            else:
+                team.abbreviation = abbreviation
+                team.sport_key = mock_game["sport_key"]
             teams[name] = team
     db.flush()
     return teams

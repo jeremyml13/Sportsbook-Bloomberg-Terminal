@@ -13,6 +13,7 @@ from app.services.normalizer import (
     normalize_sportsdataio_mlb_news,
 )
 from app.services.odds_api import fetch_mlb_odds
+from app.services.seed_mock import seed_mock_data
 from app.services.sportsdataio import fetch_mlb_game_odds_by_date, fetch_mlb_injured_players, fetch_mlb_news
 
 router = APIRouter(prefix="/ingest", tags=["ingestion"])
@@ -73,6 +74,23 @@ def ingest_odds_api_mlb(db: Session = Depends(get_db)) -> IngestOddsResponse:
             f"games_created={counts['games']}, odds_snapshots_created={counts['odds_snapshots']}; "
             f"usage_last={response.usage.requests_last}, "
             f"usage_remaining={response.usage.requests_remaining}."
+        ),
+    )
+
+
+@router.post("/demo/reset", response_model=IngestOddsResponse)
+def reset_demo_data(db: Session = Depends(get_db)) -> IngestOddsResponse:
+    counts = seed_mock_data(db)
+
+    return IngestOddsResponse(
+        accepted=True,
+        source="mock",
+        games_seen=counts["games"],
+        snapshots_normalized=counts["odds_snapshots"],
+        message=(
+            "Reset demo board: "
+            f"games={counts['games']}, teams={counts['teams']}, sportsbooks={counts['sportsbooks']}, "
+            f"odds_snapshots={counts['odds_snapshots']}, market_signals={counts['market_signals']}."
         ),
     )
 

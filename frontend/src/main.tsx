@@ -174,6 +174,7 @@ type PlayerInjuryEvent = {
 type ChartMode = "home_spread" | "moneyline" | "total";
 type ViewMode = "board" | "opportunities" | "watchlist" | "notebook" | "tracking" | "screener" | "copilot";
 type SportKey = "basketball_nba" | "baseball_mlb" | "americanfootball_nfl";
+type DataMode = "demo" | "live";
 type ScreenerFilter = "stale" | "disagreement" | "soon" | "watchlist" | "saved" | "quiet";
 
 type SavedBetIdea = {
@@ -936,7 +937,7 @@ function MarkdownContent({ content }: { content: string }) {
   return <div className="text-sm">{blocks}</div>;
 }
 
-function MarketCopilot({ selectedGameId, sportKey }: { selectedGameId: string | null; sportKey: SportKey }) {
+function MarketCopilot({ selectedGameId, sportKey, dataMode }: { selectedGameId: string | null; sportKey: SportKey; dataMode: DataMode }) {
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
@@ -960,7 +961,7 @@ function MarketCopilot({ selectedGameId, sportKey }: { selectedGameId: string | 
     fetch(`${API_BASE}/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message, game_id: selectedGameId, sport_key: sportKey }),
+      body: JSON.stringify({ message, game_id: selectedGameId, sport_key: sportKey, data_mode: dataMode }),
     })
       .then((response) => {
         if (!response.ok) throw new Error("Market Copilot could not answer right now.");
@@ -980,7 +981,9 @@ function MarketCopilot({ selectedGameId, sportKey }: { selectedGameId: string | 
           <Bot className="h-4 w-4 text-cyan-300" />
           <h2 className="text-sm font-semibold uppercase text-slate-200">Market Copilot</h2>
         </div>
-        <span className="text-xs font-semibold text-slate-500">{selectedGameId ? "Game context active" : "Board context"}</span>
+        <span className="text-xs font-semibold text-slate-500">
+          {dataMode === "demo" ? "Demo" : "Live"} {selectedGameId ? "game context" : "board context"}
+        </span>
       </div>
 
       <div className="grid min-h-[620px] gap-4 p-4 lg:grid-cols-[260px_minmax(0,1fr)]">
@@ -1880,6 +1883,7 @@ function App() {
   const [gameContext, setGameContext] = useState<GameContext | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>("board");
   const [activeSport, setActiveSport] = useState<SportKey>("basketball_nba");
+  const [dataMode, setDataMode] = useState<DataMode>("demo");
   const [command, setCommand] = useState("");
   const [watchlist, setWatchlist] = useState<string[]>(() => readStoredJson<string[]>(WATCHLIST_STORAGE_KEY, []));
   const [betIdeas, setBetIdeas] = useState<SavedBetIdea[]>(() => readStoredJson<SavedBetIdea[]>(BET_IDEAS_STORAGE_KEY, []));
@@ -1888,7 +1892,7 @@ function App() {
   const [refreshMessage, setRefreshMessage] = useState<string | null>(null);
 
   function loadGames() {
-    fetch(`${API_BASE}/games/today`)
+    fetch(`${API_BASE}/games/today?mode=${dataMode}`)
       .then((response) => {
         if (!response.ok) throw new Error("Could not load today's board.");
         return response.json();
@@ -1901,7 +1905,7 @@ function App() {
   }
 
   function loadFreshness() {
-    fetch(`${API_BASE}/games/meta/odds-freshness`)
+    fetch(`${API_BASE}/games/meta/odds-freshness?mode=${dataMode}`)
       .then((response) => {
         if (!response.ok) throw new Error("Could not load odds freshness.");
         return response.json();
@@ -1910,10 +1914,11 @@ function App() {
       .catch(() => setFreshness(null));
   }
 
-  function refreshOdds() {
+  function refreshMarketData() {
     setRefreshingOdds(true);
     setRefreshMessage(null);
-    fetch(`${API_BASE}/ingest/odds-api/mlb`, { method: "POST" })
+    const endpoint = dataMode === "demo" ? "/ingest/demo/reset" : "/ingest/odds-api/mlb";
+    fetch(`${API_BASE}${endpoint}`, { method: "POST" })
       .then((response) => {
         if (!response.ok) throw new Error("Could not refresh odds.");
         return response.json();
@@ -1931,7 +1936,7 @@ function App() {
   useEffect(() => {
     loadGames();
     loadFreshness();
-  }, []);
+  }, [dataMode]);
 
   useEffect(() => {
     window.localStorage.setItem(WATCHLIST_STORAGE_KEY, JSON.stringify(watchlist));
@@ -2056,7 +2061,7 @@ function App() {
           <div>
             <div className="flex items-center gap-2 text-xs font-semibold uppercase text-emerald-300">
               <Radio className="h-4 w-4" />
-              Live {selectedSport.label} market feed
+              {dataMode === "demo" ? "Demo" : "Live"} {selectedSport.label} market feed
             </div>
             <h1 className="mt-1 text-xl font-semibold">Sports Market Terminal</h1>
           </div>
@@ -2067,12 +2072,12 @@ function App() {
             </div>
             <button
               type="button"
-              onClick={refreshOdds}
+              onClick={refreshMarketData}
               disabled={refreshingOdds}
               className="inline-flex items-center gap-2 rounded-md border border-cyan-400/40 bg-cyan-400/10 px-3 py-2 text-sm font-semibold text-cyan-100 hover:bg-cyan-400/20 disabled:cursor-not-allowed disabled:opacity-60"
             >
               <RefreshCw className={`h-4 w-4 ${refreshingOdds ? "animate-spin" : ""}`} />
-              {refreshingOdds ? "Refreshing" : "Refresh Odds"}
+              {refreshingOdds ? "Working" : dataMode === "demo" ? "Reset Demo Data" : "Refresh Live MLB Odds"}
             </button>
           </div>
         </div>
@@ -2104,6 +2109,35 @@ function App() {
       </header>
 
       <div className="border-b border-slate-800 bg-slate-950 px-5 py-3">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex rounded-md border border-slate-800 bg-slate-950 p-1">
+            {[
+              ["demo", "Demo"],
+              ["live", "Live"],
+            ].map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => {
+                  setDataMode(key as DataMode);
+                  setSelectedGameId(null);
+                  setViewMode("board");
+                  if (key === "live") setActiveSport("baseball_mlb");
+                }}
+                className={`rounded px-3 py-1.5 text-sm font-semibold transition ${
+                  dataMode === key ? "bg-cyan-500 text-slate-950" : "text-slate-400 hover:text-slate-100"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <div className="max-w-3xl text-sm text-slate-500">
+            {dataMode === "demo"
+              ? "Demo mode uses stored sample odds so every sport, chart, signal, matrix, and Copilot workflow is populated."
+              : "Live mode fetches real MLB odds and uses API credits. Line movement charts fill in as multiple live snapshots are collected."}
+          </div>
+        </div>
         <div className="flex flex-wrap gap-2">
           {SPORTS.map((sport) => {
             const active = activeSport === sport.key;
@@ -2189,7 +2223,7 @@ function App() {
             ) : viewMode === "screener" ? (
               <ScreenerView games={visibleGames} watchlist={watchlist} ideas={betIdeas} onSelectGame={selectGame} />
             ) : viewMode === "copilot" ? (
-              <MarketCopilot selectedGameId={selectedGameId} sportKey={activeSport} />
+              <MarketCopilot selectedGameId={selectedGameId} sportKey={activeSport} dataMode={dataMode} />
             ) : (
               <div className="grid gap-4">
                 {visibleGames.length ? visibleGames.map((game) => (
@@ -2202,7 +2236,9 @@ function App() {
                   />
                 )) : (
                   <div className="rounded-md border border-slate-800 bg-slate-900 px-4 py-5 text-sm text-slate-500">
-                    No {selectedSport.label} games are loaded yet.
+                    {dataMode === "demo"
+                      ? `No ${selectedSport.label} demo games are loaded yet. Use Reset Demo Data to repopulate the sample board.`
+                      : `No live ${selectedSport.label} games are loaded yet. Live refresh currently fetches MLB odds only.`}
                   </div>
                 )}
               </div>

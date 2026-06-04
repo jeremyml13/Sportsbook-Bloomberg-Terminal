@@ -18,13 +18,13 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 @router.post("", response_model=ChatResponse)
 def chat_with_market_copilot(request: ChatRequest, db: Session = Depends(get_db)) -> ChatResponse:
     try:
-        games = get_today_game_summaries(db)
+        games = get_today_game_summaries(db, mode=request.data_mode)
         if not games:
-            games = get_recent_game_summaries(db)
+            games = get_recent_game_summaries(db, mode=request.data_mode)
         if request.sport_key:
             games = [game for game in games if game.sport_key == request.sport_key]
         selected_game = get_game_detail(db, request.game_id) if request.game_id else None
-        freshness = get_odds_freshness(db)
+        freshness = get_odds_freshness(db, mode=request.data_mode)
     except SQLAlchemyError as exc:
         db.rollback()
         raise HTTPException(status_code=503, detail="Could not load market context for chat.") from exc

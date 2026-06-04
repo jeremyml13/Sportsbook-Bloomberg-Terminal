@@ -268,33 +268,39 @@ def persist_normalized_odds(db: Session, rows: list[dict[str, Any]]) -> dict[str
     return counts
 
 
-def get_today_game_summaries(db: Session) -> list[GameSummary]:
+def get_today_game_summaries(db: Session, mode: str = "demo") -> list[GameSummary]:
     start = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
     end = start + timedelta(days=1)
-    games = list(db.scalars(
+    query = (
         select(Game)
         .where(Game.commence_time >= start, Game.commence_time < end)
         .options(joinedload(Game.home_team), joinedload(Game.away_team))
         .order_by(Game.commence_time)
-    ).all())
-    odds_api_games = [game for game in games if game.external_id.startswith("oddsapi-mlb-")]
-    if odds_api_games:
-        games = odds_api_games
+    )
+    if mode == "demo":
+        query = query.where(Game.id.in_(select(OddsSnapshot.game_id).where(OddsSnapshot.source == "mock")))
+    elif mode == "live":
+        query = query.where(Game.id.in_(select(OddsSnapshot.game_id).where(OddsSnapshot.source != "mock")))
+
+    games = list(db.scalars(query).all())
 
     summaries = [_build_summary(db, game) for game in games]
     return sorted(summaries, key=lambda game: (-game.opportunity_score, game.commence_time))
 
 
-def get_recent_game_summaries(db: Session, limit: int = 5) -> list[GameSummary]:
-    games = list(
-        db.scalars(
-            select(Game)
-            .options(joinedload(Game.home_team), joinedload(Game.away_team))
-            .order_by(Game.commence_time.desc())
-            .limit(limit)
-        )
-        .all()
+def get_recent_game_summaries(db: Session, limit: int = 5, mode: str = "demo") -> list[GameSummary]:
+    query = (
+        select(Game)
+        .options(joinedload(Game.home_team), joinedload(Game.away_team))
+        .order_by(Game.commence_time.desc())
+        .limit(limit)
     )
+    if mode == "demo":
+        query = query.where(Game.id.in_(select(OddsSnapshot.game_id).where(OddsSnapshot.source == "mock")))
+    elif mode == "live":
+        query = query.where(Game.id.in_(select(OddsSnapshot.game_id).where(OddsSnapshot.source != "mock")))
+
+    games = list(db.scalars(query).all())
     summaries = [_build_summary(db, game) for game in games]
     return sorted(summaries, key=lambda game: (-game.opportunity_score, game.commence_time))
 
@@ -420,10 +426,22 @@ def get_game_signals(db: Session, external_id: str) -> list[MarketSignalRead] | 
     return None if detail is None else detail.signals
 
 
-def get_odds_freshness(db: Session) -> OddsFreshnessRead:
-    latest_snapshot_time = db.scalar(select(func.max(OddsSnapshot.snapshot_time)))
-    snapshot_count = db.scalar(select(func.count(OddsSnapshot.id))) or 0
-    sportsbook_count = db.scalar(select(func.count(func.distinct(OddsSnapshot.sportsbook_id)))) or 0
+def get_odds_freshness(db: Session, mode: str = "demo") -> OddsFreshnessRead:
+    latest_query = select(func.max(OddsSnapshot.snapshot_time))
+    snapshot_count_query = select(func.count(OddsSnapshot.id))
+    sportsbook_count_query = select(func.count(func.distinct(OddsSnapshot.sportsbook_id)))
+    if mode == "demo":
+        latest_query = latest_query.where(OddsSnapshot.source == "mock")
+        snapshot_count_query = snapshot_count_query.where(OddsSnapshot.source == "mock")
+        sportsbook_count_query = sportsbook_count_query.where(OddsSnapshot.source == "mock")
+    elif mode == "live":
+        latest_query = latest_query.where(OddsSnapshot.source != "mock")
+        snapshot_count_query = snapshot_count_query.where(OddsSnapshot.source != "mock")
+        sportsbook_count_query = sportsbook_count_query.where(OddsSnapshot.source != "mock")
+
+    latest_snapshot_time = db.scalar(latest_query)
+    snapshot_count = db.scalar(snapshot_count_query) or 0
+    sportsbook_count = db.scalar(sportsbook_count_query) or 0
     age_seconds = None
     if latest_snapshot_time is not None:
         age_seconds = int((datetime.now(UTC) - latest_snapshot_time).total_seconds())

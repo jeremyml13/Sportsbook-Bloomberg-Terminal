@@ -207,6 +207,7 @@ class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=800)
     game_id: str | None = None
     sport_key: str | None = None
+    data_mode: str = "demo"
 
 
 class ChatResponse(BaseModel):

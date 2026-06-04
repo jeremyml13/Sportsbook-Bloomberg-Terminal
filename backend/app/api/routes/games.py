@@ -11,20 +11,20 @@ router = APIRouter(prefix="/games", tags=["games"])
 
 
 @router.get("/today", response_model=list[GameSummary])
-def get_today_games(db: Session = Depends(get_db)) -> list[GameSummary]:
+def get_today_games(mode: str = "demo", db: Session = Depends(get_db)) -> list[GameSummary]:
     try:
-        games = get_today_game_summaries(db)
+        games = get_today_game_summaries(db, mode=mode)
         if games:
             return games
     except SQLAlchemyError:
         db.rollback()
 
-    return mock_games
+    return mock_games if mode == "demo" else []
 
 
 @router.get("/meta/odds-freshness", response_model=OddsFreshnessRead)
-def get_odds_freshness_route(db: Session = Depends(get_db)) -> OddsFreshnessRead:
-    return get_odds_freshness(db)
+def get_odds_freshness_route(mode: str = "demo", db: Session = Depends(get_db)) -> OddsFreshnessRead:
+    return get_odds_freshness(db, mode=mode)
 
 
 @router.get("/{game_id}", response_model=GameDetail)
