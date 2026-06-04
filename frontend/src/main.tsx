@@ -939,12 +939,7 @@ function MarkdownContent({ content }: { content: string }) {
 
 function MarketCopilot({ selectedGameId, sportKey, dataMode }: { selectedGameId: string | null; sportKey: SportKey; dataMode: DataMode }) {
   const [input, setInput] = useState("");
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      role: "assistant",
-      content: "Ask about opportunity scores, stale prices, no-vig probabilities, injuries, or why a game is worth attention.",
-    },
-  ]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -2174,7 +2169,6 @@ function App() {
 
       <div className="px-5 py-5">
         {error ? <div className="rounded-md border border-red-500/40 bg-red-500/10 p-4 text-red-200">{error}</div> : null}
-        {refreshMessage ? <div className="mb-4 rounded-md border border-cyan-500/30 bg-cyan-500/10 p-4 text-sm text-cyan-100">{refreshMessage}</div> : null}
         {selectedGameId && detail ? (
           <GameDetailView
             detail={detail}
