@@ -224,7 +224,7 @@ const CHART_MODES: { key: ChartMode; label: string; description: string }[] = [
   { key: "total", label: "Total", description: "Over total by sportsbook" },
 ];
 
-const API_BASE = "http://127.0.0.1:8000";
+const API_BASE = import.meta.env.VITE_API_BASE ?? "http://127.0.0.1:8000";
 const BOOK_COLORS = ["#22c55e", "#38bdf8", "#f59e0b", "#a78bfa", "#f472b6", "#14b8a6", "#eab308", "#fb7185", "#818cf8"];
 const WATCHLIST_STORAGE_KEY = "sports-terminal-watchlist";
 const BET_IDEAS_STORAGE_KEY = "sports-terminal-bet-ideas";

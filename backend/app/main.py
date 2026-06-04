@@ -24,6 +24,11 @@ app.include_router(context.router)
 app.include_router(chat.router)
 
 
+@app.get("/")
+def root() -> dict[str, str]:
+    return {"service": "Sports Betting Market Terminal API", "status": "ok"}
+
+
 @app.get("/health")
 def health_check() -> dict[str, str]:
     return {"status": "ok"}
