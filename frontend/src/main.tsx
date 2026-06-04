@@ -1884,6 +1884,7 @@ function App() {
   const [betIdeas, setBetIdeas] = useState<SavedBetIdea[]>(() => readStoredJson<SavedBetIdea[]>(BET_IDEAS_STORAGE_KEY, []));
   const [error, setError] = useState<string | null>(null);
   const [refreshingOdds, setRefreshingOdds] = useState(false);
+  const [refreshingContext, setRefreshingContext] = useState(false);
   const [refreshMessage, setRefreshMessage] = useState<string | null>(null);
 
   function loadGames() {
@@ -1926,6 +1927,34 @@ function App() {
       })
       .catch((caught: Error) => setError(caught.message))
       .finally(() => setRefreshingOdds(false));
+  }
+
+  function loadGameContext(gameId: string) {
+    fetch(`${API_BASE}/context/mlb/games/${gameId}`)
+      .then((response) => {
+        if (!response.ok) throw new Error("Could not load injury/news context.");
+        return response.json();
+      })
+      .then((data) => {
+        setGameContext(data);
+        setError(null);
+      })
+      .catch((caught: Error) => setError(caught.message));
+  }
+
+  function refreshInjuriesAndNews() {
+    setRefreshingContext(true);
+    fetch(`${API_BASE}/ingest/sportsdataio/mlb-context`, { method: "POST" })
+      .then((response) => {
+        if (!response.ok) throw new Error("Could not refresh injuries and news.");
+        return response.json();
+      })
+      .then(() => {
+        if (selectedGameId) loadGameContext(selectedGameId);
+        setError(null);
+      })
+      .catch((caught: Error) => setError(caught.message))
+      .finally(() => setRefreshingContext(false));
   }
 
   useEffect(() => {
@@ -2011,16 +2040,7 @@ function App() {
       })
       .catch((caught: Error) => setError(caught.message));
 
-    fetch(`${API_BASE}/context/mlb/games/${selectedGameId}`)
-      .then((response) => {
-        if (!response.ok) throw new Error("Could not load injury/news context.");
-        return response.json();
-      })
-      .then((data) => {
-        setGameContext(data);
-        setError(null);
-      })
-      .catch((caught: Error) => setError(caught.message));
+    loadGameContext(selectedGameId);
   }, [selectedGameId]);
 
   const visibleGames = games.filter((game) => game.sport_key === activeSport);
@@ -2074,6 +2094,17 @@ function App() {
               <RefreshCw className={`h-4 w-4 ${refreshingOdds ? "animate-spin" : ""}`} />
               {refreshingOdds ? "Working" : dataMode === "demo" ? "Reset Demo Data" : "Refresh Live MLB Odds"}
             </button>
+            {dataMode === "live" ? (
+              <button
+                type="button"
+                onClick={refreshInjuriesAndNews}
+                disabled={refreshingContext}
+                className="inline-flex items-center gap-2 rounded-md border border-emerald-400/40 bg-emerald-400/10 px-3 py-2 text-sm font-semibold text-emerald-100 hover:bg-emerald-400/20 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <Newspaper className={`h-4 w-4 ${refreshingContext ? "animate-pulse" : ""}`} />
+                {refreshingContext ? "Updating Context" : "Refresh Injuries & News"}
+              </button>
+            ) : null}
           </div>
         </div>
         <div className="mt-4 max-w-3xl">
