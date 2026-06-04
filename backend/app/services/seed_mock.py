@@ -2,7 +2,7 @@ from sqlalchemy import delete
 from sqlalchemy.orm import Session
 
 from app.db.models import Game, MarketSignal, OddsSnapshot, Sportsbook, Team
-from app.services.mock_data import BOOKS, NBA_GAMES, get_mock_game
+from app.services.mock_data import ALL_GAMES, BOOKS, get_mock_game
 from app.services.odds_math import american_to_implied_probability
 
 
@@ -23,7 +23,7 @@ def seed_mock_data(db: Session) -> dict[str, int]:
         "market_signals": 0,
     }
 
-    for mock_game in NBA_GAMES:
+    for mock_game in ALL_GAMES:
         detail = get_mock_game(mock_game["id"])
         if detail is None:
             continue
@@ -87,11 +87,11 @@ def _seed_sportsbooks(db: Session) -> dict[str, Sportsbook]:
 
 def _seed_teams(db: Session) -> dict[str, Team]:
     teams: dict[str, Team] = {}
-    for mock_game in NBA_GAMES:
+    for mock_game in ALL_GAMES:
         for _, name, abbreviation in (mock_game["home"], mock_game["away"]):
             if name in teams:
                 continue
-            team = Team(name=name, abbreviation=abbreviation, sport_key="basketball_nba")
+            team = Team(name=name, abbreviation=abbreviation, sport_key=mock_game["sport_key"])
             db.add(team)
             teams[name] = team
     db.flush()

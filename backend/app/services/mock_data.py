@@ -64,6 +64,97 @@ NBA_GAMES = [
     },
 ]
 
+MLB_GAMES = [
+    {
+        "id": "mlb-lad-sf-001",
+        "sport_key": "baseball_mlb",
+        "home": ("team-sf", "San Francisco Giants", "SF"),
+        "away": ("team-lad", "Los Angeles Dodgers", "LAD"),
+        "start_hours": 2,
+        "spread_path": (1.5, 1.5, 1.0, 1.0, 0.5),
+        "total_path": (8.5, 8.0, 8.0, 7.5, 7.5),
+        "signals": ("sharp_movement", "book_disagreement", "best_number_gone"),
+    },
+    {
+        "id": "mlb-nyy-bos-002",
+        "sport_key": "baseball_mlb",
+        "home": ("team-bos-mlb", "Boston Red Sox", "BOS"),
+        "away": ("team-nyy", "New York Yankees", "NYY"),
+        "start_hours": 3,
+        "spread_path": (-1.5, -1.0, -1.0, -0.5, -0.5),
+        "total_path": (9.0, 9.0, 9.5, 9.5, 10.0),
+        "signals": ("high_volatility", "reverse_line_movement"),
+    },
+    {
+        "id": "mlb-atl-phi-003",
+        "sport_key": "baseball_mlb",
+        "home": ("team-phi", "Philadelphia Phillies", "PHI"),
+        "away": ("team-atl", "Atlanta Braves", "ATL"),
+        "start_hours": 4,
+        "spread_path": (-0.5, -0.5, -1.0, -1.5, -1.5),
+        "total_path": (8.0, 8.5, 8.5, 8.5, 9.0),
+        "signals": ("book_disagreement",),
+    },
+    {
+        "id": "mlb-chc-stl-004",
+        "sport_key": "baseball_mlb",
+        "home": ("team-stl", "St. Louis Cardinals", "STL"),
+        "away": ("team-chc", "Chicago Cubs", "CHC"),
+        "start_hours": 5,
+        "spread_path": (0.5, 0.5, 0.0, -0.5, -1.0),
+        "total_path": (7.5, 7.5, 8.0, 8.0, 8.5),
+        "signals": ("sharp_movement", "high_volatility"),
+    },
+]
+
+NFL_GAMES = [
+    {
+        "id": "nfl-kc-buf-001",
+        "sport_key": "americanfootball_nfl",
+        "home": ("team-buf", "Buffalo Bills", "BUF"),
+        "away": ("team-kc", "Kansas City Chiefs", "KC"),
+        "start_hours": 8,
+        "spread_path": (-1.5, -2.0, -2.0, -2.5, -3.0),
+        "total_path": (48.5, 49.0, 49.5, 50.0, 50.5),
+        "signals": ("sharp_movement", "book_disagreement"),
+    },
+    {
+        "id": "nfl-dal-phi-002",
+        "sport_key": "americanfootball_nfl",
+        "home": ("team-phi-nfl", "Philadelphia Eagles", "PHI"),
+        "away": ("team-dal-nfl", "Dallas Cowboys", "DAL"),
+        "start_hours": 9,
+        "spread_path": (-4.5, -4.0, -3.5, -3.0, -3.0),
+        "total_path": (45.0, 45.5, 46.0, 46.0, 46.5),
+        "signals": ("reverse_line_movement", "book_disagreement"),
+    },
+    {
+        "id": "nfl-sf-sea-003",
+        "sport_key": "americanfootball_nfl",
+        "home": ("team-sea", "Seattle Seahawks", "SEA"),
+        "away": ("team-sf-nfl", "San Francisco 49ers", "SF"),
+        "start_hours": 10,
+        "spread_path": (6.5, 6.0, 5.5, 5.0, 4.5),
+        "total_path": (43.5, 43.0, 42.5, 42.0, 41.5),
+        "signals": ("sharp_movement", "best_number_gone"),
+    },
+    {
+        "id": "nfl-cin-bal-004",
+        "sport_key": "americanfootball_nfl",
+        "home": ("team-bal", "Baltimore Ravens", "BAL"),
+        "away": ("team-cin", "Cincinnati Bengals", "CIN"),
+        "start_hours": 11,
+        "spread_path": (-6.0, -6.5, -7.0, -7.0, -7.5),
+        "total_path": (46.5, 47.0, 47.5, 47.5, 48.0),
+        "signals": ("high_volatility", "book_disagreement", "best_number_gone"),
+    },
+]
+
+for game in NBA_GAMES:
+    game["sport_key"] = "basketball_nba"
+
+ALL_GAMES = [*NBA_GAMES, *MLB_GAMES, *NFL_GAMES]
+
 BOOK_ADJUSTMENTS = {
     "DraftKings": 0.0,
     "FanDuel": -0.5,
@@ -179,7 +270,7 @@ def _summary(game: dict) -> GameSummary:
     latest_spreads = [row.line for row in _current_markets(snapshot_rows).spread if row.line is not None]
     return GameSummary(
         id=game["id"],
-        sport_key="basketball_nba",
+        sport_key=game["sport_key"],
         commence_time=now + timedelta(hours=game["start_hours"]),
         home_team=_team(game["home"]),
         away_team=_team(game["away"]),
@@ -191,11 +282,11 @@ def _summary(game: dict) -> GameSummary:
     )
 
 
-mock_games: list[GameSummary] = [_summary(game) for game in NBA_GAMES]
+mock_games: list[GameSummary] = [_summary(game) for game in ALL_GAMES]
 
 
 def get_mock_game(game_id: str) -> GameDetail | None:
-    game = next((item for item in NBA_GAMES if item["id"] == game_id), None)
+    game = next((item for item in ALL_GAMES if item["id"] == game_id), None)
     if game is None:
         return None
 
