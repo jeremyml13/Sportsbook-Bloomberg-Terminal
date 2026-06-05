@@ -61,7 +61,7 @@ The project was evaluated around whether it supports the intended market workflo
 As early user validation, I asked sports bettors what they would want in a platform like this. The common themes were:
 
 - a way to track their bets or betting ideas
-- help identifying potential postive EV opportunities
+- help identifying potential positive EV opportunities
 - tools for tracking CLV, or Closing Line Value, after a bet idea is saved
 
 Those responses directly shaped the Bet Idea Notebook, opportunity scoring, and CLV Tracking views.
@@ -77,6 +77,55 @@ Known limitations:
 - Saved bet ideas currently use browser local storage rather than account-based persistence.
 - Live data must be manually refreshed by the user due to API constraints - it would be better if there was an automatic scheduler that got the odds at a set interval (e.g. 5 minutes)
 
+## Video Requirements Coverage
+
+### Q1: Why did I build this?
+
+I built this because sports betting market research is fragmented. A bettor often has to check multiple sportsbooks, line movement, injury news, and personal notes across different tools. The bottleneck I identified is not simply access to odds; it is understanding which games deserve attention and why.
+
+This inspired the product direction: a single market terminal where a user can scan games, compare prices, inspect movement, save betting ideas, and ask an AI Copilot to explain market context.
+
+### Q2: How does the product work?
+
+The product is a full-stack application:
+
+- The frontend is a React/Vite dashboard.
+- The backend is a FastAPI API.
+- Odds snapshots, games, teams, sportsbooks, signals, injuries, and news are stored in PostgreSQL through Supabase.
+- Demo Mode uses stored sample odds so the product is reproducible for demos.
+- Live Mode can fetch real MLB odds through The Odds API.
+- Injury and news context comes from SportsDataIO.
+- The AI Copilot uses DigitalOcean inference and receives app context from the backend.
+
+The core workflow is:
+
+1. Load a sport board.
+2. Rank games by opportunity score.
+3. Open a game detail page.
+4. Inspect line movement and sportsbook disagreement.
+5. Compare best prices and no-vig probabilities.
+6. Save a bet idea.
+7. Track CLV against later market prices.
+8. Ask Copilot to explain what is happening.
+
+### Q3: Potential Use Cases And Impact
+
+The main use case is for a bettor or sports market analyst who wants to quickly compare sportsbooks, understand market movement, save betting ideas, and track whether saved prices beat the later market.
+
+The broader value is decision support and transparency. The app shows uncertainty, market movement, sportsbook differences, EV assumptions, and risk sizing instead of pretending to guarantee winners. This is important because a responsible betting tool should help users reason about markets more clearly, not encourage blind picks.
+
+### Q4: What I Would Add Next
+
+Future additions I would prioritize:
+
+- automated scheduled odds refreshes
+- true closing-line tracking after games close
+- account-based saved bet history
+- broader live support beyond MLB
+- player props and alternate markets
+- signal performance analytics to evaluate whether detected signals are useful over time
+- a richer injury/news-to-price movement timeline
+- backend persistence for watchlists and notebooks
 
 ## Process, Integrity & Disclosure
 
