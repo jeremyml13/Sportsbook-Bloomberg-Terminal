@@ -1,20 +1,58 @@
 # Sports Market Terminal Feature Guide
 
-This project is a Bloomberg-style market intelligence terminal for sports bettors. It focuses on MLB right now and combines live sportsbook odds, market movement, injury/news context, price comparison, opportunity ranking, and bet tracking workflows.
+This project is a Bloomberg-style market intelligence terminal for sports bettors. It combines stored demo markets, live MLB sportsbook odds, market movement, injury/news context, price comparison, opportunity ranking, bet tracking workflows, and an AI Copilot.
 
-## 1. Live Market Board
+The app has two data modes:
 
-The main board shows all available MLB games for the current slate. Each game card includes the matchup, start time, current spread, opening spread, moneyline, total, opportunity score, and market regime tags.
+- `Demo Mode`: uses stored sample odds across NBA, MLB, and NFL so the full product workflow is populated for demos.
+- `Live Mode`: uses real MLB odds and injury/news ingestion from external APIs.
+
+## 1. Demo Mode And Live Mode
+
+The platform separates demo data from live data so users understand exactly what they are seeing.
+
+Demo Mode is the default. It contains stored sample markets for:
+
+- NBA
+- MLB
+- NFL
+
+This mode is ideal for demos because charts, sportsbook comparison, signals, Copilot responses, and bet tracking workflows all have populated data.
+
+Live Mode is an explicit opt-in mode for real MLB data. It uses API credits, so live refreshes are manual rather than automatic.
+
+## 2. Multi-Sport Market Board
+
+The main board shows games for the selected sport and data mode. Each game card includes the matchup, start time, current spread, opening spread, moneyline, total, opportunity score, and market regime tags.
+
+The current demo board includes:
+
+- 5 NBA games
+- 4 MLB games
+- 4 NFL games
+- 1,040 stored demo odds snapshots
 
 The board is designed to help a bettor quickly scan the full market and decide which games deserve attention. Instead of forcing the user to inspect every game manually, the terminal surfaces games with disagreement, stale prices, or other market signals.
 
-## 2. Opportunity Score
+## 3. Sport Tabs
+
+The app includes top-level sport tabs:
+
+- `NBA`
+- `MLB`
+- `NFL`
+
+The selected sport controls the board, opportunity view, screener, notebook, tracking view, and Copilot context.
+
+In Live Mode, the app currently focuses on MLB because the live odds ingestion endpoint fetches real MLB markets.
+
+## 4. Opportunity Score
 
 Each game receives an opportunity score. This score is calculated from signals such as price alerts, sportsbook disagreement, volatility, and warning-level market signals.
 
 The purpose is not to guarantee a profitable bet. Instead, the score helps prioritize where to look first. A high score means the market is showing unusual behavior, such as a book offering a cheaper price than the broader market or sportsbooks disagreeing on the spread.
 
-## 3. Market Regime Tags
+## 5. Market Regime Tags
 
 Games are labeled with quick market regime tags:
 
@@ -26,7 +64,7 @@ Games are labeled with quick market regime tags:
 
 These tags summarize the state of the market in plain language. For a demo, this is useful because it shows the platform is not only displaying odds but interpreting the betting market.
 
-## 4. Terminal Command Bar
+## 6. Terminal Command Bar
 
 The header includes a terminal-style command/search bar. Users can search for teams or type commands to jump between views.
 
@@ -38,10 +76,11 @@ Supported commands include:
 - `NOTEBOOK`, `BETS`, `IDEAS`: opens saved bet ideas
 - `TRACK`, `TRACKING`, `CLV`, `PERFORMANCE`: opens the CLV tracking view
 - `SCREEN`, `SCREENER`, `FILTER`, `FILTERS`: opens the market screener
+- `COPILOT`, `CHAT`, `AI`, `ASSISTANT`: opens the Copilot view
 
 The command bar makes the app feel more like a professional terminal than a normal dashboard.
 
-## 5. Keyboard Shortcuts
+## 7. Keyboard Shortcuts
 
 The platform supports power-user keyboard shortcuts:
 
@@ -52,11 +91,12 @@ The platform supports power-user keyboard shortcuts:
 - `N`: open Notebook
 - `T`: open Tracking
 - `S`: open Screener
+- `C`: open Copilot
 - `Esc`: leave game detail or unfocus search
 
 These shortcuts help the product feel fast and terminal-like during a demo.
 
-## 6. Top Opportunities View
+## 8. Top Opportunities View
 
 The Opportunities tab shows a ranked table of the best current market spots. It includes:
 
@@ -68,7 +108,7 @@ The Opportunities tab shows a ranked table of the best current market spots. It 
 
 This view is useful for answering: “Where should a bettor look first?” It turns the platform from a passive odds board into a decision-support tool.
 
-## 7. Market Screener
+## 9. Market Screener
 
 The Screener tab lets the user filter the slate by market condition. Instead of scrolling every game, the user can narrow the board to the exact type of opportunity they care about.
 
@@ -83,15 +123,30 @@ Current screener filters include:
 
 The screener table shows the game, start time, market regime, opportunity score, best alert, and whether the game is pinned or has saved bet ideas. This gives the platform a more professional terminal workflow because the user can slice the slate by signal type.
 
-## 8. Manual Odds Refresh
+## 10. Manual Data Refresh Controls
 
-The header includes a manual `Refresh Odds` button. This calls the backend Odds API ingestion endpoint only when the user clicks it.
+The header includes mode-aware manual refresh controls.
+
+In Demo Mode, the button is:
+
+- `Reset Demo Data`
+
+This calls the backend demo reset endpoint and restores the stored sample market.
+
+In Live Mode, the app shows:
+
+- `Refresh Live MLB Odds`
+- `Refresh Injuries & News`
+
+`Refresh Live MLB Odds` calls the backend Odds API ingestion endpoint only when the user clicks it.
+
+`Refresh Injuries & News` calls the SportsDataIO context ingestion endpoint and then reloads the selected game's context if the user is on a game detail page.
 
 This is intentionally manual because the current Odds API plan has limited credits. The platform does not automatically spend credits in the background. After a refresh completes, the board and freshness metadata update.
 
-The refresh response also displays the backend ingestion message, including the number of snapshots created and API usage information when available.
+The app avoids displaying noisy backend ingestion messages in the main content area so the demo flow stays clean.
 
-## 9. Odds Freshness Indicator
+## 11. Odds Freshness Indicator
 
 The header shows how fresh the stored odds are. It displays the age of the most recent odds snapshot, such as `Odds 12m ago` or `Odds 5h 0m ago`.
 
@@ -104,7 +159,7 @@ The platform also stores and exposes:
 
 This matters because market intelligence is only useful if the user knows whether the odds are current. During a demo, this is a good moment to explain that the app is credit-conscious but ready for automated refresh later.
 
-## 10. Game Detail Page
+## 12. Game Detail Page
 
 Clicking any game opens a game-specific detail page. This page brings together the market, quant tools, line movement, injuries/news, and sportsbook comparison for one matchup.
 
@@ -121,7 +176,7 @@ The top section includes:
 
 This page is the core “single-game terminal” experience.
 
-## 11. Selectable Line Movement Chart
+## 13. Selectable Line Movement Chart
 
 The line movement chart lets the user switch between:
 
@@ -131,15 +186,15 @@ The line movement chart lets the user switch between:
 
 Each sportsbook is plotted separately. This allows the user to inspect whether books are moving together or whether one book is lagging.
 
-Right now, this becomes more powerful as more odds snapshots are collected over time. Once automated odds refresh is added, the chart can show real intraday market movement.
+Demo Mode uses preloaded historical snapshots so line charts are populated immediately. Live Mode becomes more powerful as more live odds snapshots are collected over time.
 
-## 12. Market Signals Panel
+## 14. Market Signals Panel
 
 The Market Signals panel displays detected signals for the selected game. These signals are intended to highlight conditions like sharp movement, book disagreement, volatility, or other market behaviors.
 
 The product currently has the signal framework in place, and this can be expanded as more historical odds snapshots are collected.
 
-## 13. Quant Snapshot
+## 15. Quant Snapshot
 
 The Quant Snapshot is a betting-focused analytics panel. It includes:
 
@@ -150,7 +205,7 @@ The Quant Snapshot is a betting-focused analytics panel. It includes:
 
 This is one of the most important parts of the platform because it translates raw odds into actionable market intelligence.
 
-## 14. Best Available Prices
+## 16. Best Available Prices
 
 The platform compares sportsbook prices and identifies the best available price for each market/selection.
 
@@ -158,7 +213,7 @@ For example, if multiple sportsbooks offer a moneyline on the same team, the sys
 
 This is valuable because sports bettors can improve expected return simply by consistently taking the best available price.
 
-## 15. No-Vig Moneyline Probabilities
+## 17. No-Vig Moneyline Probabilities
 
 The platform calculates no-vig fair probabilities from available moneyline markets.
 
@@ -166,7 +221,7 @@ Sportsbook odds include margin, also called vig. The no-vig calculation removes 
 
 This helps the user compare their own opinion against the market. If the user believes a team wins more often than the no-vig probability suggests, the bet may deserve further evaluation.
 
-## 16. EV Calculator
+## 18. EV Calculator
 
 The EV calculator lets a user enter their own estimated win probability for a moneyline side. The platform then calculates:
 
@@ -176,13 +231,13 @@ The EV calculator lets a user enter their own estimated win probability for a mo
 
 This is the first step toward identifying potential positive-EV bets. The platform does not claim a bet is profitable by itself; it gives the user the tools to compare their probability estimate to the available market price.
 
-## 17. Quarter-Kelly Sizing
+## 19. Quarter-Kelly Sizing
 
 The EV calculator includes quarter-Kelly sizing. Kelly sizing estimates how much of a bankroll to risk based on edge and payout.
 
 The platform uses quarter Kelly rather than full Kelly because full Kelly can be aggressive. This gives a more conservative risk-management signal.
 
-## 18. Price Alerts
+## 20. Price Alerts
 
 Price alerts identify cases where one sportsbook appears cheaper than the market average on an implied probability basis.
 
@@ -190,7 +245,7 @@ Instead of comparing American odds directly, the system compares implied probabi
 
 These alerts help identify potentially stale or lagging sportsbook prices.
 
-## 19. Line Movement Alerts
+## 21. Line Movement Alerts
 
 The platform can compare the first stored snapshot against the latest stored snapshot and flag material movement.
 
@@ -201,7 +256,7 @@ It currently detects:
 
 This feature becomes more useful as more odds snapshots are stored over time.
 
-## 20. Injuries & News Panel
+## 22. Injuries & News Panel
 
 The game detail page includes injury and news context for the teams in the selected game.
 
@@ -213,13 +268,13 @@ This panel shows:
 
 SportsDataIO trial data may scramble some injury fields, so the frontend and backend avoid showing scrambled values. This keeps the demo cleaner and more professional.
 
-## 21. Injury Change Detection
+## 23. Injury Change Detection
 
 The backend tracks injury events. If a player appears on the injury report for the first time, the system records a new injury event. If a player’s status, body part, or note changes, the system records an update event.
 
 This matters because sports betting markets often react quickly to injury news. Over time, this can support news-to-price impact analysis.
 
-## 22. Bet Idea Notebook
+## 24. Bet Idea Notebook
 
 The platform includes a local Bet Idea Notebook. From a game detail page, a user can save a bet idea with:
 
@@ -237,7 +292,7 @@ The platform includes a local Bet Idea Notebook. From a game detail page, a user
 
 This turns the platform into a workflow tool rather than only an odds display.
 
-## 23. Notebook View
+## 25. Notebook View
 
 The Notebook tab shows all saved bet ideas. Each saved idea includes the key betting metrics and the user’s notes.
 
@@ -245,7 +300,7 @@ Users can click a saved idea to return to the associated game or delete ideas th
 
 For a demo, this is useful because it shows how a bettor can form, save, and revisit a thesis.
 
-## 24. Watchlist
+## 26. Watchlist
 
 Users can pin games to a watchlist using the star button. The Watchlist tab shows only pinned games.
 
@@ -253,7 +308,7 @@ This is useful for bettors who want to monitor a few games closely instead of sc
 
 The current implementation stores the watchlist in browser local storage.
 
-## 25. CLV Tracking
+## 27. CLV Tracking
 
 The Tracking tab compares saved bet ideas against the latest available market price.
 
@@ -267,7 +322,7 @@ For each saved idea, it shows:
 
 CLV means closing line value. Right now, the system compares saved price versus the latest available price. Once the app stores closing prices, this same view can become a true closing-line-value tracker.
 
-## 26. Average CLV
+## 28. Average CLV
 
 The top stats include average CLV across saved bet ideas with a current matching price.
 
@@ -275,7 +330,7 @@ This gives the user a quick sense of whether their saved bets are generally movi
 
 In the future, this can become one of the most important performance metrics in the app.
 
-## 27. Sportsbook Matrix
+## 29. Sportsbook Matrix
 
 Each game detail page includes a sportsbook comparison matrix. Rows are markets/selections, and columns are sportsbooks.
 
@@ -283,7 +338,7 @@ The best available price in each row is highlighted.
 
 This is one of the most terminal-like features because it gives a dense, professional view of book-by-book market differences.
 
-## 28. Full Odds Table
+## 30. Full Odds Table
 
 The detail page also includes a full odds table with:
 
@@ -296,7 +351,33 @@ The detail page also includes a full odds table with:
 
 This gives the user a complete raw view behind the higher-level summaries.
 
-## 29. The Odds API Integration
+## 31. AI Market Copilot
+
+The Copilot tab provides an AI assistant that explains the current market context.
+
+It can answer questions such as:
+
+- Which games should I inspect first?
+- Why is this opportunity score high?
+- Where are books disagreeing?
+- How should I interpret no-vig probabilities?
+- What does the EV calculator imply?
+- What changed in the line movement?
+
+The Copilot is context-aware. It receives:
+
+- selected sport
+- selected data mode
+- current board context
+- selected game context when available
+- price alerts
+- signals
+- no-vig probabilities
+- movement alerts
+
+The Copilot is not intended to guarantee picks. It explains market information already present in the platform.
+
+## 32. The Odds API Integration
 
 The platform can ingest MLB odds from The Odds API. It normalizes sportsbook odds into the app’s internal database format.
 
@@ -309,9 +390,9 @@ The integration currently supports:
 - implied probability calculation
 - timestamped odds snapshots
 
-The user has limited credits, so the app avoids unnecessary API calls unless explicitly triggered through backend ingestion.
+Due to limited credits, the app avoids unnecessary API calls unless explicitly triggered through backend ingestion.
 
-## 30. SportsDataIO Injury/News Integration
+## 33. SportsDataIO Injury/News Integration
 
 The platform also integrates SportsDataIO for MLB player context.
 
@@ -323,7 +404,7 @@ This is currently used for:
 
 Because SportsDataIO trial data may include scrambled values, the platform filters those fields out before displaying them.
 
-## 31. Current Storage Model
+## 34. Current Storage Model
 
 The backend database stores:
 
@@ -341,45 +422,7 @@ Frontend local storage currently stores:
 - watchlist
 - saved bet ideas
 
-This is good enough for a demo, but production would eventually need backend user persistence.
-
-## 32. Current Product Positioning
-
-The product is best described as a sports betting market intelligence terminal.
-
-It does not simply show odds. It helps bettors answer:
-
-- Where is the market disagreeing?
-- Which book has the best price?
-- Is my probability estimate positive EV?
-- Did my saved bet beat the later market?
-- Did news or injuries create a market reaction?
-- Which games deserve attention first?
-- Is the odds feed fresh enough to trust right now?
-- Which games match my current betting screen?
-
-## 33. Good Demo Flow
-
-A strong demo video could follow this structure:
-
-1. Start on the main board and explain the concept: a Bloomberg-style terminal for sports betting markets.
-2. Show the command bar and keyboard shortcuts.
-3. Open the Opportunities tab and explain opportunity scoring.
-4. Open the Screener and filter for stale prices or high disagreement.
-5. Point out the odds freshness indicator and manual refresh button.
-6. Click into a high-opportunity game.
-7. Show the line movement chart and switch between spread, moneyline, and total.
-8. Show the Quant Snapshot.
-9. Explain best price, no-vig probability, EV, and Kelly sizing.
-10. Show the sportsbook matrix and highlight the best available price.
-11. Show injuries/news context.
-12. Add the game to the watchlist.
-13. Save a bet idea with a note.
-14. Open the Notebook and show the saved thesis.
-15. Open Tracking and explain CLV.
-16. End by explaining future automated odds snapshots and stronger CLV tracking.
-
-## 34. Future Features To Mention
+## 37. Future Features
 
 The strongest future additions are:
 
@@ -388,8 +431,9 @@ The strongest future additions are:
 - signal performance analytics
 - sharper fair-line model
 - injury/news-to-price impact timeline
-- NBA support
 - player props and alternate markets
 - backend persistence for user notebooks/watchlists
+- account-based saved bet history
+- broader live support beyond MLB
 
 These future additions would move the platform closer to a true professional betting terminal.
